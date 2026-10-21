@@ -58,7 +58,7 @@ export function WechatPanel() {
       <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
         <svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d="M20 11.5a7.5 7.5 0 0 1-7.5 7.5H8l-4 2v-5a7.5 7.5 0 1 1 16-4.5Z" /><path d="M8 10h.01M12 10h.01M16 10h.01" strokeWidth="3" strokeLinecap="round" /></svg>
       </span>
-      <div className="min-w-0 flex-1"><h2 id="wechat-heading" className="text-[14px] font-medium">微信记账</h2><p className="mt-0.5 text-[11px] text-ink-400">发一句话，和网页记到同一本账里</p></div>
+      <div className="min-w-0 flex-1"><h2 id="wechat-heading" className="text-[14px] font-medium">微信记账</h2><p className="mt-0.5 text-[11px] text-ink-400">说句话、发张小票，记到同一本账里</p></div>
       <span aria-live="polite" className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] ${ready ? 'bg-emerald-50 text-emerald-700' : 'bg-ink-50 text-ink-500'}`}>{label}</span>
     </div>
     <div className="space-y-3 p-4">
@@ -66,7 +66,7 @@ export function WechatPanel() {
       {status && !status.enabled && <p className="text-[12px] leading-relaxed text-ink-500">服务器尚未启用微信入口，请联系管理员启用后再连接。</p>}
       {status?.enabled && !status.worker_running && <p role="status" className="rounded-lg bg-amber-50 px-3 py-2 text-[12px] text-amber-800">微信后台服务尚未就绪。请稍候，持续未恢复时检查服务器是否正在运行。</p>}
       {status?.connected ? <>
-        <p className="text-[12px] leading-relaxed text-ink-500">{status.state === 'expired' ? '登录凭证已失效，请断开后重新扫码连接。' : '在微信 ClawBot 对话里发送记账说明，即可记账、查账、修改和撤销。'}</p>
+        <p className="text-[12px] leading-relaxed text-ink-500">{status.state === 'expired' ? '登录凭证已失效，请断开后重新扫码连接。' : '在微信 ClawBot 对话里发文字、小票图片或按住说话，即可记账、查账、修改和撤销。'}</p>
         {status.last_error && <p role="status" className="text-[12px] text-amber-700">{status.last_error}</p>}
         <div className="rounded-xl bg-ink-50 px-3 py-2.5 text-[12px] leading-6 text-ink-600"><p>“午饭花了28，微信付的”</p><p>“这个月餐饮花了多少”</p><p>“撤销上一步”</p></div>
         {status.last_message_at && <p className="text-[11px] text-ink-400">最近收到消息：{localTime(status.last_message_at)}</p>}
@@ -83,13 +83,13 @@ export function WechatPanel() {
           {login.error && <p role="status" className="mt-2 text-[12px] text-amber-700">{login.error}</p>}
           <button disabled={busy} onClick={() => void run(() => api.disconnectWechat())} className="mt-3 text-[11px] text-ink-400 underline underline-offset-2 disabled:opacity-40">取消本次连接</button>
         </div> : <>
-          <p className="text-[12px] leading-relaxed text-ink-500">连接后，在微信 ClawBot 对话里直接记账。文字消息会同步到当前账本，输入“帮助”可查看用法。</p>
+          <p className="text-[12px] leading-relaxed text-ink-500">连接后，在微信 ClawBot 对话里发送文字、图片或语音，记账结果会同步到当前账本。输入“帮助”可查看用法。</p>
           {login && login.state !== 'confirmed' && <p role="status" className="text-[12px] text-amber-700">{login.error || loginLabels[login.state]}</p>}
           <button disabled={busy || !status.worker_running || login?.state === 'creating'} onClick={() => void run(async () => { const next = await api.connectWechat(); setStatus(previous => previous ? { ...previous, login: next } : previous) })} className="rounded-xl bg-ink-900 px-4 py-2.5 text-[12px] font-medium text-white transition hover:bg-ink-800 disabled:opacity-40">{busy || login?.state === 'creating' ? '正在生成…' : login ? '重新生成二维码' : '扫码连接微信'}</button>
           {login?.state === 'creating' && <button disabled={busy} onClick={() => void run(() => api.disconnectWechat())} className="ml-3 text-[11px] text-ink-400 underline disabled:opacity-40">取消本次连接</button>}
         </>}
       </>}
-      <p className="border-t border-ink-50 pt-3 text-[11px] leading-relaxed text-ink-400">第一版支持文字对话。图片、小票和语音请在网页记录。连接服务需持续运行，微信可用性以客户端扫码授权结果为准。</p>
+      <p className="border-t border-ink-50 pt-3 text-[11px] leading-relaxed text-ink-400">📷 每条最多4张图片，每张8MB；🎙️ 语音最多2分钟，回复会附上听到的内容。识别不清会提示补充，文件、视频和引用消息暂不解析。</p>
     </div>
   </section>
 }

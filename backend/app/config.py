@@ -32,6 +32,10 @@ class Settings:
         self.ai_api_key = os.getenv("AI_API_KEY", "")
         self.ai_model = os.getenv("AI_MODEL", "gpt-6-luna")
         self.ai_timeout = float(os.getenv("AI_TIMEOUT_SEC", "90"))
+        self.asr_base_url = (os.getenv("ASR_BASE_URL") or self.ai_base_url).rstrip("/")
+        self.asr_api_key = os.getenv("ASR_API_KEY") or self.ai_api_key
+        self.asr_model = os.getenv("ASR_MODEL") or "gemini-2.5-flash"
+        self.asr_timeout = float(os.getenv("ASR_TIMEOUT_SEC", "45"))
 
         self.timezone = os.getenv("LEDGER_TZ", "Asia/Shanghai")
         self.wechat_enabled = os.getenv("WECHAT_ENABLED", "1") == "1"

@@ -23,7 +23,8 @@ CLIENT_VERSION = str((2 << 16) | (4 << 8) | 10)
 class _HideWechatRequests(logging.Filter):
     def filter(self, record):
         # HTTPX 的 INFO 请求日志包含查询串，扫码值和配对数字不应进入日志。
-        return "/ilink/bot/" not in record.getMessage()
+        message = record.getMessage()
+        return "/ilink/bot/" not in message and ".cdn.weixin.qq.com" not in message
 
 
 logging.getLogger("httpx").addFilter(_HideWechatRequests())

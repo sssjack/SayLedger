@@ -16,13 +16,16 @@ from app.db import SessionLocal, WechatBinding, WechatDelivery, utcnow
 from app.finance import lock_ledger
 from app.wechat_api import WechatError, digest, seal, unseal
 from app.wechat_format import format_reply
+from app.wechat_media import WechatInput, WechatMediaError, discard_images, prepare_input
 
 HELP = ("你好呀，我是一笔，你的小账本搭子～\n"
         "🧾 记一笔：午饭花了28，微信付的\n"
+        "📷 拍小票或发付款截图，我来读金额和商户\n"
+        "🎙️ 按住说话：昨天打车38元\n"
         "🔎 翻翻账本：这个月餐饮花了多少\n"
         "✏️ 改一改：把刚才那笔改成32\n"
         "↩️ 反悔一下：撤销上一步\n"
-        "微信里先用文字找我哦，图片、小票和语音请到网页记录。")
+        "图片每条最多4张、每张8MB，语音每条最多2分钟。看不清或没听清，我会先问你哦～")
 
 LEGACY_ACK_ERROR = "微信未确认回复已发送，服务会自动重试。"
 
@@ -113,24 +116,8 @@ def ingest(user_id: int, revision: str, data: dict) -> int:
         return added
 
 
-def _input(envelope: dict) -> tuple[str, str]:
-    items = envelope.get("items") or []
-    if not items or any(not isinstance(item, dict) or item.get("type") != 1 for item in items):
-        return "（收到非文字消息）", "当前微信入口只支持文字，这条消息没有记账。请发送文字，或到网页上传图片和使用语音。"
-    if any(not isinstance(item.get("text_item"), dict) or not isinstance(item["text_item"].get("text"), str)
-           for item in items):
-        return "（无效消息）", "没有读取到有效文字，请重新发送。"
-    texts = [item["text_item"]["text"] for item in items]
-    text = "\n".join(texts).strip()
-    if not text or len(text) > 4000:
-        return "（空消息或文字过长）", "请发送1到4000字的记账说明，这条消息没有记账。"
-    if any(item.get("ref_msg") for item in items):
-        return text, "当前入口暂不解析微信引用内容。这条消息没有记账，请直接说明账单的商户、日期或金额。"
-    return text, ""
-
-
 def process_pending(delivery_id: int, stopped=None):
-    """AI 在只读会话中运行；随后再次验证绑定，再原子写入账本和待发送回复。"""
+    """媒体和 AI 不持有写锁；账本和待发送回复在同一事务内保存。"""
     with SessionLocal() as db:
         item = db.get(WechatDelivery, delivery_id)
         if item is None or item.state != "pending":
@@ -144,43 +131,55 @@ def process_pending(delivery_id: int, stopped=None):
                     or binding.revision != revision or binding.state != "connected"):
                 return
             envelope = json.loads(unseal(item.envelope_cipher))
-            text, error = _input(envelope)
-            body = SimpleNamespace(text=text, image_id=None, image_ids=[], local_date=None, confirm_duplicate=False)
+        prepared, error, committed = WechatInput(), "", False
+        try:
+            try:
+                prepared = prepare_input(envelope, user_id, delivery_id)
+            except WechatMediaError as exc:
+                prepared.text = "（微信消息未能完整识别）"
+                error = str(exc) + " 这条消息没有记账。"
+            body = SimpleNamespace(text=prepared.text, image_id=None, image_ids=prepared.images,
+                                   local_date=None, confirm_duplicate=False)
             if envelope.get("created"):
                 sent = dt.datetime.fromtimestamp(int(envelope["created"]) / 1000, dt.timezone.utc)
                 body.local_date = sent.astimezone(ZoneInfo(settings.timezone)).date().isoformat()
-            if text == "确认重复记账" and not error:
-                previous = db.scalar(select(WechatDelivery).where(WechatDelivery.user_id == user_id,
-                    WechatDelivery.revision == revision, WechatDelivery.id < delivery_id,
-                    WechatDelivery.state.in_(["reply_pending", "sent", "failed"]))
-                    .order_by(WechatDelivery.id.desc()).limit(1))
-                payload = json.loads(previous.payload_json) if previous else {}
-                retry = payload.get("retry") or {}
-                if (previous and previous.created_at >= utcnow() - dt.timedelta(minutes=10)
-                        and payload.get("kind") == "duplicate" and retry.get("text")):
-                    body.text = retry["text"]
-                    body.confirm_duplicate = True
+            with SessionLocal() as db:
+                if prepared.text == "确认重复记账" and not error and not prepared.images:
+                    previous = db.scalar(select(WechatDelivery).where(WechatDelivery.user_id == user_id,
+                        WechatDelivery.revision == revision, WechatDelivery.id < delivery_id,
+                        WechatDelivery.state.in_(["reply_pending", "sent", "failed"]))
+                        .order_by(WechatDelivery.id.desc()).limit(1))
+                    payload = json.loads(previous.payload_json) if previous else {}
+                    retry = payload.get("retry") or {}
+                    if (previous and previous.created_at >= utcnow() - dt.timedelta(minutes=10)
+                            and payload.get("kind") == "duplicate" and (retry.get("text") or retry.get("imageIds"))):
+                        body.text, body.image_ids = retry.get("text", ""), retry.get("imageIds") or []
+                        body.confirm_duplicate = True
+                    else:
+                        error = "没有可确认的重复账单，或确认已超过10分钟。这条消息没有记账，请重新发送原记账说明。"
+                if error:
+                    plan = ChatPlan(prepared.text, [], now_local().date(), {}, error=error)
+                elif prepared.text in {"帮助", "使用说明", "help"} and not prepared.images:
+                    plan = ChatPlan(prepared.text, [], now_local().date(), {"action": "chat", "reply": HELP})
                 else:
-                    error = "没有可确认的重复账单，或确认已超过10分钟。这条消息没有记账，请重新发送原记账说明。"
-            if error:
-                plan = ChatPlan(text, [], now_local().date(), {}, error=error)
-            elif text in {"帮助", "使用说明", "help"}:
-                plan = ChatPlan(text, [], now_local().date(), {"action": "chat", "reply": HELP})
-            else:
-                plan = prepare_chat(db, user_id, body, channel="wechat")
-        if stopped is not None and stopped.is_set():
-            return
-        with SessionLocal.begin() as db:
-            lock_ledger(db)
-            binding = db.get(WechatBinding, user_id)
-            item = db.get(WechatDelivery, delivery_id)
-            if (item is None or item.state != "pending" or binding is None
-                    or binding.revision != revision or binding.state != "connected"):
+                    plan = prepare_chat(db, user_id, body, channel="wechat")
+            if stopped is not None and stopped.is_set():
                 return
-            result = apply_chat(db, user_id, plan, channel="wechat")
-            item.reply = format_reply(result["reply"], result["payload"])
-            item.payload_json = json.dumps(result["payload"], ensure_ascii=False)
-            item.state = "reply_pending"
+            with SessionLocal.begin() as db:
+                lock_ledger(db)
+                binding = db.get(WechatBinding, user_id)
+                item = db.get(WechatDelivery, delivery_id)
+                if (item is None or item.state != "pending" or binding is None
+                        or binding.revision != revision or binding.state != "connected"):
+                    return
+                result = apply_chat(db, user_id, plan, channel="wechat")
+                item.reply = format_reply(result["reply"], result["payload"], transcript=prepared.transcript)
+                item.payload_json = json.dumps(result["payload"], ensure_ascii=False)
+                item.state = "reply_pending"
+            committed = True
+        finally:
+            if not committed:
+                discard_images(prepared.images)
 
 
 def fail_pending(delivery_id: int):

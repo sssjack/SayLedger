@@ -37,9 +37,11 @@ def _headline(reply: str, payload: dict) -> str:
     return icon + " " + reply
 
 
-def format_reply(reply: str, payload: dict) -> str:
+def format_reply(reply: str, payload: dict, *, transcript: str = "") -> str:
     kind = payload.get("kind")
     lines = [_headline(reply, payload)]
+    if transcript:
+        lines.insert(0, "🎙️ 听到你说：" + transcript[:200])
     period = payload.get("range") or {}
     if period.get("start") or period.get("end"):
         lines.append(f"📅 {period.get('start') or '不限'} 至 {period.get('end') or '不限'}")

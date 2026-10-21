@@ -10,3 +10,4 @@ pillow==11.1.0
 tzdata==2024.2
 cryptography==46.0.3
 qrcode==8.2
+pilk-nogil==0.4.3
