@@ -140,6 +140,71 @@ npm run dev        # http://127.0.0.1:5288，已把 /api 代理到 8791
 | `LEDGER_DATA_DIR` | 数据库和图片目录，本地开发指向 `../.localdata`，容器内是 `/data` |
 | `LEDGER_TZ` | 默认 `Asia/Shanghai`，决定「今天/昨天」按哪个时区算 |
 
+## 微信聊天记账
+
+微信入口使用腾讯 iLink 协议，独立运行在现有 Python 后端内，不需要安装 OpenClaw。
+协议适配依据 [Tencent/openclaw-weixin 2.4.10](https://github.com/Tencent/openclaw-weixin)
+及其 [后端协议说明](https://github.com/Tencent/openclaw-weixin/blob/main/docs/protocol_zh_CN.md)。
+该说明并非完整服务端契约，接口兼容性及账号可用性需以微信实际授权和联调结果为准。
+
+### 连接和使用
+
+1. 安装更新后的 `backend/requirements.txt`，启动后端及前端。
+2. 登录账本，进入「管理 → 微信记账」，点击「扫码连接微信」。
+3. 用自己的手机微信扫码，并按手机提示完成确认；若显示验证数字，在网页输入。
+4. 绑定成功后，在微信 ClawBot 对话中发送「帮助」，再尝试「午饭花了28，微信付的」。
+5. 可以继续发送「改成32」「这个月餐饮花了多少」「撤销上一步」；网页和微信使用同一账本及对话上下文。
+
+微信第一版仅支持文字：记账、查询、修改、删除、撤销、退款/回款、预算和个人规则。
+同条消息包含图片、语音、文件或引用内容时，整条消息会提示未记账，避免部分解析造成误记。
+图片、小票和语音继续通过网页使用。账单明细以文字返回，较长结果和 CSV 导出通过网页查看。
+疑似重复的记账会先列出候选；确认是另一笔时，在10分钟内回复「确认重复记账」。
+
+### 服务配置
+
+| 环境变量 | 说明 |
+| --- | --- |
+| `WECHAT_ENABLED` | 默认 `1`；设为 `0` 停止微信后台任务并禁止新扫码 |
+| `WECHAT_ENCRYPTION_KEY` | 可选 Fernet 密钥；未设置时自动生成数据目录下的 `wechat.key` |
+| `LEDGER_PUBLIC_URL` | 微信回复中的网页入口，例如 `https://jizhang.clockwise.asia`；子路径部署填写完整 `/jizhang` 路径 |
+
+**备份、升级、迁移时必须同时保留数据库和 `wechat.key`，或保留原有的 `WECHAT_ENCRYPTION_KEY`。**
+密钥丢失后无法恢复旧微信凭证，可在网页断开连接后重新扫码；已有账单不受影响。
+不要把密钥、数据库、扫码二维码或 Bot token 提交到 Git 或发给其他人。
+
+后台通过 HTTPS 长轮询连接微信，服务器需能访问 `ilinkai.weixin.qq.com` 及微信返回的官方重定向域名。
+不需要新增公网回调地址或开放端口。后端必须持续运行，重启后自动恢复已保存的绑定和接收位置。
+同一数据目录通过文件锁选出一个消息服务进程；只支持同一主机的本地数据目录，不适用于多主机或网络文件系统共享。
+
+消息先存入收件箱，再提交接收游标；同一微信消息 ID 只执行一次。
+账本变更、操作审计和待发送回复在一个事务内保存。回复失败仅重发原回复，保持同一 `client_id`，不会再次执行记账。
+网络中断会自动退避重连，回复最多自动尝试8次；用「重新发送回复」继续重发。
+微信服务端对重发 `client_id` 的去重行为仍需实测，网络响应丢失时可能收到重复回复，但不会重复入账。
+登录失效会显示重新连接提示。断开连接会清除绑定凭证、扫码信息和消息内容，保留已有账单及匿名消息去重指纹。
+
+### 接口与本地验证
+
+所有 `/api/wechat/*` 接口均要求账本登录，且只操作当前用户的数据：
+
+| 方法和路径 | 用途 |
+| --- | --- |
+| `GET /api/wechat/status` | 连接、扫码、服务心跳及回复投递状态 |
+| `POST /api/wechat/login` | 获取扫码会话，进行中的二维码会复用 |
+| `GET /api/wechat/login/{id}/qr` | 本地渲染二维码 PNG，不返回凭证 |
+| `POST /api/wechat/login/{id}/verify` | 提交手机显示的验证数字 |
+| `DELETE /api/wechat/connection` | 取消扫码或断开连接，保留账单 |
+| `POST /api/wechat/replies/retry` | 重新投递未送达回复，不重复执行业务 |
+
+本地测试保留在已忽略的 `backend/tests/`。为隔离临时 SQLite 目录，分别运行：
+
+```powershell
+backend/.venv/Scripts/python.exe -m unittest discover -s backend/tests -p test_finance.py -q
+backend/.venv/Scripts/python.exe -m unittest discover -s backend/tests -p test_wechat.py -q
+```
+
+测试覆盖消息去重、跨用户隔离、扫码取消/过期、配对验证、重启恢复、发送重试、账本与收件箱原子回滚和解绑并发。
+首次上线还需用手机完成扫码，依次验证文字记账、连续修改、查询和撤销；未扫码前不能视为微信端到端验证完成。
+
 ## 部署
 
 线上服务器：`root@8.141.121.133`，目录 `/opt/clockwise-ledger`，

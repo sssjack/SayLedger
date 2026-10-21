@@ -134,6 +134,14 @@ export default function App() {
     catch (err) { setError(err instanceof Error ? err.message : '同步失败') }
   }, [refreshNumbers])
 
+  useEffect(() => {
+    if (!authed) return
+    const sync = () => { if (document.visibilityState === 'visible' && !sending) void syncLedger() }
+    window.addEventListener('focus', sync)
+    document.addEventListener('visibilitychange', sync)
+    return () => { window.removeEventListener('focus', sync); document.removeEventListener('visibilitychange', sync) }
+  }, [authed, sending, syncLedger])
+
   const deleteTx = useCallback(
     async (id: number) => {
       await api.deleteTransaction(id)
@@ -203,7 +211,7 @@ export default function App() {
               { key: 'chat', label: '对话', icon: IconSpark },
               { key: 'bills', label: '账单', icon: IconList },
               { key: 'report', label: '报告', icon: IconChart },
-              { key: 'plan', label: '预算与往来', icon: IconList },
+              { key: 'plan', label: '管理', icon: IconList },
             ] as const
           ).map((item) => {
             const active = tab === item.key

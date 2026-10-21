@@ -108,6 +108,73 @@ class Preference(Base):
     rules_json: Mapped[str] = mapped_column(Text, default="{}")
 
 
+class WechatBinding(Base):
+    """微信账号和账本的绑定；凭证及轮询游标加密保存。"""
+
+    __tablename__ = "wechat_bindings"
+
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    revision: Mapped[str] = mapped_column(String(32), unique=True)
+    bot_id: Mapped[str] = mapped_column(String(256), unique=True)
+    peer_id: Mapped[str] = mapped_column(String(256), unique=True)
+    token_cipher: Mapped[str] = mapped_column(Text)
+    cursor_cipher: Mapped[str] = mapped_column(Text, default="")
+    base_url: Mapped[str] = mapped_column(String(256))
+    state: Mapped[str] = mapped_column(String(24), default="connected")
+    last_error: Mapped[str] = mapped_column(String(256), default="")
+    last_poll_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+    last_message_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class WechatLogin(Base):
+    """扫码流程持久化，页面刷新或切换进程后仍可继续。"""
+
+    __tablename__ = "wechat_logins"
+
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    login_id: Mapped[str] = mapped_column(String(32), unique=True)
+    qr_cipher: Mapped[str] = mapped_column(Text)
+    content_cipher: Mapped[str] = mapped_column(Text)
+    code_cipher: Mapped[str] = mapped_column(Text, default="")
+    base_url: Mapped[str] = mapped_column(String(256))
+    state: Mapped[str] = mapped_column(String(32), default="wait")
+    error: Mapped[str] = mapped_column(String(256), default="")
+    expires_at: Mapped[dt.datetime] = mapped_column(DateTime)
+
+
+class WechatDelivery(Base):
+    """持久消息收件箱和待发送回复；记账结果和处理状态在同一事务内提交。"""
+
+    __tablename__ = "wechat_deliveries"
+    __table_args__ = (UniqueConstraint("user_id", "peer_hash", "message_key"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    revision: Mapped[str] = mapped_column(String(32), index=True)
+    peer_hash: Mapped[str] = mapped_column(String(64))
+    message_key: Mapped[str] = mapped_column(String(64))
+    envelope_cipher: Mapped[str] = mapped_column(Text)
+    state: Mapped[str] = mapped_column(String(24), default="pending", index=True)
+    reply: Mapped[str] = mapped_column(Text, default="")
+    payload_json: Mapped[str] = mapped_column(Text, default="{}")
+    client_id: Mapped[str] = mapped_column(String(64))
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    retry_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+    error: Mapped[str] = mapped_column(String(256), default="")
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
+    sent_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class WechatWorker(Base):
+    """后台消息服务心跳，仅由持有数据目录独占锁的进程更新。"""
+
+    __tablename__ = "wechat_worker"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    heartbeat_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
+
+
 class Message(Base):
     """对话历史，用于让 AI 理解上下文与后续追问。"""
 

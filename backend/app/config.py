@@ -34,6 +34,9 @@ class Settings:
         self.ai_timeout = float(os.getenv("AI_TIMEOUT_SEC", "90"))
 
         self.timezone = os.getenv("LEDGER_TZ", "Asia/Shanghai")
+        self.wechat_enabled = os.getenv("WECHAT_ENABLED", "1") == "1"
+        self.wechat_encryption_key = os.getenv("WECHAT_ENCRYPTION_KEY", "")
+        self.public_url = os.getenv("LEDGER_PUBLIC_URL", "").rstrip("/")
 
 
 @lru_cache

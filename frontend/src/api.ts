@@ -108,6 +108,28 @@ export type ChatMessage = {
   pending?: boolean
 }
 
+export type WechatLogin = {
+  id: string
+  state: 'creating' | 'wait' | 'scaned' | 'scaned_but_redirect' | 'need_verifycode' | 'confirmed' | 'expired' | 'error'
+  expires_at: string
+  qr_available: boolean
+  verify_pending: boolean
+  error: string
+}
+
+export type WechatStatus = {
+  enabled: boolean
+  worker_running: boolean
+  connected: boolean
+  state: 'disconnected' | 'connected' | 'expired'
+  last_error: string
+  last_poll_at: string | null
+  last_message_at: string | null
+  pending_replies: number
+  failed_replies: number
+  login: WechatLogin | null
+}
+
 export type PeriodStats = {
   period: string
   label: string
@@ -181,6 +203,12 @@ export const api = {
     }),
   logout: () => request<{ ok: boolean }>('/api/logout', { method: 'POST' }),
   me: () => request<{ id: number; username: string }>('/api/me'),
+  wechatStatus: () => request<WechatStatus>('/api/wechat/status'),
+  connectWechat: () => request<WechatLogin>('/api/wechat/login', { method: 'POST' }),
+  wechatQrUrl: (id: string) => `${BASE}/api/wechat/login/${encodeURIComponent(id)}/qr`,
+  verifyWechat: (id: string, code: string) => request<{ ok: boolean }>(`/api/wechat/login/${encodeURIComponent(id)}/verify`, { method: 'POST', body: JSON.stringify({ code }) }),
+  disconnectWechat: () => request<{ ok: boolean }>('/api/wechat/connection', { method: 'DELETE' }),
+  retryWechatReplies: () => request<{ ok: boolean; count: number }>('/api/wechat/replies/retry', { method: 'POST' }),
   meta: () =>
     request<{
       categories: Category[]

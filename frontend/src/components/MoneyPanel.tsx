@@ -3,6 +3,7 @@ import { api, type Budget, type Preference, type Transaction } from '../api'
 import { BudgetProgress } from './BudgetProgress'
 import { TransactionCard } from './TransactionCard'
 import { fmtMoney } from '../utils'
+import { WechatPanel } from './WechatPanel'
 
 type Props = { categories: string[]; payments: string[]; refreshKey: number; onChanged: () => void }
 const input = 'min-w-0 rounded-lg border border-ink-200 bg-white px-2.5 py-2 text-[12px] text-ink-800 outline-none focus:border-ink-700'
@@ -44,7 +45,8 @@ export function MoneyPanel({ categories, payments, refreshKey, onChanged }: Prop
   const filtered = pending.filter(row => filter === 'borrow' ? row.kind === 'borrow' : filter === 'reimbursement' ? row.settlementKind === 'reimbursement' : filter === 'receive' ? row.kind !== 'borrow' : true)
 
   return <div className="space-y-4">
-    <div className="px-1"><h1 className="text-lg font-semibold text-ink-900">预算与资金往来</h1><p className="mt-1 text-[12px] leading-relaxed text-ink-400">预算按个人承担的净支出计算；回款和账户转账不会重复计入收入。</p></div>
+    <div className="px-1"><h1 className="text-lg font-semibold text-ink-900">账本管理</h1><p className="mt-1 text-[12px] leading-relaxed text-ink-400">连接微信、设置记账习惯，管理预算与资金往来。</p></div>
+    <WechatPanel />
     {error && <div role="alert" className="rounded-xl bg-red-50 p-3 text-[12px] text-red-600">{error}<button onClick={() => void load()} className="ml-3 underline">重新加载</button></div>}
     {loading && <div className="text-[12px] text-ink-400">正在同步…</div>}
     <section className="card space-y-3 p-4">

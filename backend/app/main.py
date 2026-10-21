@@ -52,7 +52,14 @@ ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp", "image/heic", "i
 async def lifespan(_app: FastAPI):
     init_db()
     ensure_owner("me")
-    yield
+    from app.wechat_worker import WechatManager
+    manager = WechatManager()
+    _app.state.wechat_manager = manager
+    manager.start()
+    try:
+        yield
+    finally:
+        await manager.close()
 
 
 app = FastAPI(title=f"{APP_NAME} API", lifespan=lifespan, docs_url=None, redoc_url=None)
@@ -63,6 +70,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+from app.wechat_routes import router as wechat_router
+app.include_router(wechat_router)
 
 
 # ---------------------------------------------------------------- 模型定义
@@ -571,64 +581,8 @@ def text_context(changes: dict[str, Any]) -> str:
 
 @app.post("/api/chat")
 def chat(body: ChatBody, user=Depends(current_user), db: Session = Depends(get_db)):
-    images = list(dict.fromkeys([*(body.image_ids or []), *( [body.image_id] if body.image_id else [])]))
-    text = (body.text or "").strip()
-    if not text and not images:
-        raise HTTPException(status_code=400, detail="说点什么吧")
-
-    for name in images:
-        safe = re.sub(r"[^0-9a-zA-Z._-]", "", name)
-        if not safe.startswith(f"{user.id}-") or not (settings.upload_dir / safe).exists():
-            raise HTTPException(status_code=400, detail="图片无效，请重新上传")
-    safe_images = [re.sub(r"[^0-9a-zA-Z._-]", "", n) for n in images]
-    today = parse_local_date(body.local_date)
-    source = "image" if safe_images else "text"
-
-    # 用户消息先落库，界面即时可见。
-    display = text or "（发送了一张图片）"
-    save_message(
-        db,
-        user.id,
-        "user",
-        display,
-        {"imageIds": safe_images, "images": [f"/api/uploads/{n}" for n in safe_images]},
-    )
-    db.commit()
-
-    from app.conversation import execute, local_intent
-    history = recent_history(db, user.id, limit=13)[:-1]
-    recent_rows = enrich(db, list(db.scalars(select(Transaction).where(
-        Transaction.user_id == user.id, Transaction.deleted_at.is_(None),
-    ).order_by(Transaction.id.desc()).limit(30)).all()))
-    recent_query = db.scalars(select(Message).where(Message.user_id == user.id, Message.role == "assistant").order_by(Message.id.desc()).limit(20)).all()
-    last_query = next((p.get("query") for row in recent_query if (p := json.loads(row.payload_json or "{}")).get("query")), None)
-    pending = load_transactions(db, user.id, {"pending": True})
-    context = {"preferences": preference_data(db, user.id), "last_query": last_query,
-               "pending": [serialize(row) for row in pending[:50]],
-               "budgets": budget_progress(db, user.id, today.strftime("%Y-%m"))}
-    messages: list[dict[str, Any]] = [{"role": "system", "content": build_system_prompt(today, [serialize(r) for r in recent_rows], context)},
-        *history, {"role": "user", "content": build_user_content(text, safe_images)}]
-    try:
-        data = local_intent(text, today) if not safe_images else None
-        if data is None:
-            result = call_model(messages, max_tokens=3000)
-            data = result.data
-        reply, payload = execute(db, user.id, data, text, today, safe_images[0] if safe_images else "", source, body.confirm_duplicate)
-    except AIError as exc:
-        reply, payload = f"AI暂时不可用：{exc}。可以先在账单页查看和编辑已有记录。", {"kind": "error"}
-    except HTTPException as exc:
-        db.rollback()
-        if exc.status_code == 409 and isinstance(exc.detail, dict) and exc.detail.get("duplicate_ids"):
-            ids = exc.detail["duplicate_ids"]
-            candidates = enrich(db, list(db.scalars(select(Transaction).where(Transaction.user_id == user.id, Transaction.id.in_(ids))).all()))
-            reply = "这笔可能已经记过了，请核对下面的账单。确实是另一笔可以继续记入。"
-            payload = {"kind": "duplicate", "candidates": [serialize(row) for row in candidates], "retry": {"text": text, "imageIds": safe_images}}
-        else:
-            reply, payload = str(exc.detail), {"kind": "clarify"}
-    reply = reply[:1000]
-    save_message(db, user.id, "assistant", reply, payload)
-    db.commit()
-    return {"reply": reply, "payload": payload}
+    from app.chat_service import process_chat
+    return process_chat(body, user.id, db)
 
 
 # ---------------------------------------------------------------- 账单 CRUD
