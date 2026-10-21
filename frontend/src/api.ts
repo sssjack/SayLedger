@@ -72,8 +72,25 @@ export type Stats = {
   group_by: string
 }
 
+export type Memo = {
+  id: number
+  content: string
+  nextTriggerAt: string
+  triggerDate: string
+  recurrence: 'none' | 'daily' | 'weekly'
+  recurrenceLabel: string
+  weekday: number | null
+  status: 'active' | 'done' | 'cancelled'
+  source: string
+  pushStatus: string
+  lastSentAt: string | null
+  createdAt: string
+}
+
 export type MessagePayload = {
-  kind?: 'record' | 'clarify' | 'query' | 'chat' | 'error' | 'update' | 'delete' | 'undo' | 'duplicate' | 'budget' | 'preference' | 'compare' | 'export'
+  kind?: 'record' | 'clarify' | 'query' | 'chat' | 'error' | 'update' | 'delete' | 'undo' | 'duplicate' | 'budget' | 'preference' | 'compare' | 'export' | 'memo'
+  memo?: Memo
+  memos?: Memo[]
   related?: Transaction[]
   budgets?: Budget[]
   month?: string
@@ -315,6 +332,12 @@ export const api = {
   budgets: (month: string) => request<{ items: Budget[]; month: string }>(`/api/budgets?month=${month}`),
   saveBudget: (input: { month: string; category: string; event: string; amount: number }) => request<{ items: Budget[] }>('/api/budgets', { method: 'PUT', body: JSON.stringify(input) }),
   deleteBudget: (id: number) => request('/api/budgets/' + id, { method: 'DELETE' }),
+  memos: (status?: string) => request<{ items: Memo[] }>(`/api/memos${status ? `?status=${status}` : ''}`),
+  createMemo: (input: { content: string; trigger_at: string; recurrence: string }) =>
+    request<{ item: Memo }>('/api/memos', { method: 'POST', body: JSON.stringify(input) }),
+  updateMemo: (id: number, patch: { content?: string; trigger_at?: string; recurrence?: string; status?: string }) =>
+    request<{ item: Memo }>(`/api/memos/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+  deleteMemo: (id: number) => request<{ ok: boolean }>(`/api/memos/${id}`, { method: 'DELETE' }),
   preferences: () => request<Preference>('/api/preferences'),
   savePreferences: (preference: Preference) => request<Preference>('/api/preferences', { method: 'PUT', body: JSON.stringify(preference) }),
 }

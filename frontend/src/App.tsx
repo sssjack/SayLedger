@@ -5,6 +5,7 @@ import { MessageBubble } from './components/MessageBubble'
 import { BillsPanel } from './components/BillsPanel'
 import { ReportPanel } from './components/ReportPanel'
 import { MoneyPanel } from './components/MoneyPanel'
+import { MemosPanel } from './components/MemosPanel'
 import { Chart, TOOLTIP_STYLE } from './components/Chart'
 import { fmtMoney } from './utils'
 import {
@@ -17,7 +18,7 @@ import {
 import { ICON_MAP } from './components/TransactionCard'
 import { APP_NAME, APP_TAGLINE } from './brand'
 
-type Tab = 'chat' | 'bills' | 'report' | 'plan'
+type Tab = 'chat' | 'bills' | 'report' | 'plan' | 'memos'
 
 const SUGGESTIONS = [
   '午饭花了 28',
@@ -26,6 +27,8 @@ const SUGGESTIONS = [
   '这个月餐饮预算1500',
   '还有谁没还我',
   '我昨天花了哪些钱',
+  '明天下午3点提醒我开会',
+  '每周三下午3点提醒我交水电费',
 ]
 
 export default function App() {
@@ -211,6 +214,7 @@ export default function App() {
               { key: 'chat', label: '对话', icon: IconSpark },
               { key: 'bills', label: '账单', icon: IconList },
               { key: 'report', label: '报告', icon: IconChart },
+              { key: 'memos', label: '备忘', icon: IconList },
               { key: 'plan', label: '管理', icon: IconList },
             ] as const
           ).map((item) => {
@@ -287,7 +291,7 @@ export default function App() {
         {tab === 'chat' && (
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
             <div className="mx-auto w-full max-w-2xl px-4 pb-2 pt-5">
-              <div className="mb-4 flex items-center justify-between gap-2 text-[11px] text-ink-400"><span>收支 · 退款 · AA · 报销 · 预算</span><button disabled={sending} onClick={() => void send('撤销上一步', [])} className="rounded-full bg-ink-50 px-2.5 py-1.5 text-ink-500 hover:bg-ink-100 disabled:opacity-40">撤销上一步</button></div>
+              <div className="mb-4 flex items-center justify-between gap-2 text-[11px] text-ink-400"><span>收支 · 退款 · AA · 报销 · 预算 · 备忘提醒</span><button disabled={sending} onClick={() => void send('撤销上一步', [])} className="rounded-full bg-ink-50 px-2.5 py-1.5 text-ink-500 hover:bg-ink-100 disabled:opacity-40">撤销上一步</button></div>
               {messages.length === 0 ? (
                 <EmptyState
                   todayTotal={todayTotal}
@@ -352,6 +356,14 @@ export default function App() {
           </div>
         )}
 
+        {tab === 'memos' && (
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+            <div className="mx-auto max-w-2xl px-4 py-4">
+              <MemosPanel refreshKey={refreshKey} onChanged={() => void refreshNumbers()} />
+            </div>
+          </div>
+        )}
+
         {tab === 'plan' && <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain"><div className="mx-auto max-w-2xl px-4 py-4"><MoneyPanel categories={categoryNames} payments={paymentNames} refreshKey={refreshKey} onChanged={() => void syncLedger()} /></div></div>}
 
         {tab === 'chat' && (
@@ -373,6 +385,7 @@ export default function App() {
             { key: 'chat', label: '对话', icon: IconSpark },
             { key: 'bills', label: '账单', icon: IconList },
             { key: 'report', label: '报告', icon: IconChart },
+            { key: 'memos', label: '备忘', icon: IconList },
             { key: 'plan', label: '管理', icon: IconList },
           ] as const
         ).map((item) => {

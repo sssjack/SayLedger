@@ -43,6 +43,39 @@ def local_intent(text: str, today: dt.date) -> dict[str, Any] | None:
     return None
 
 
+def _execute_memo(db: Session, user_id: int, data: dict[str, Any], action: str,
+                  text: str, source: str) -> tuple[str, dict[str, Any]]:
+    """备忘动作：草稿齐了就建 Memo；缺时刻/事件先存草稿追问，下一句补齐。"""
+    from app import memo as memo_mod
+    from app.auth import now_local
+
+    now = now_local()
+    if action == "memo_cancel_pending":
+        memo_mod.clear_pending(db, user_id)
+        return "好嘞，那条备忘草稿已经取消啦，不会打扰你～", {"kind": "memo"}
+    draft = data.get("draft") if isinstance(data.get("draft"), dict) else None
+    if draft is None and isinstance(data.get("memo"), dict):
+        draft = memo_mod.normalize_ai_memo(data["memo"], now)
+    if draft is None:
+        return "这条备忘我没看明白，可以换个说法再告诉我吗？比如“明天下午3点提醒我开会”。", {"kind": "clarify", "missing": ["memo"]}
+    draft = dict(draft)
+    draft.setdefault("raw_input", text)
+    if source in ("image", "wechat-image"):
+        draft.setdefault("source_kind", "image")
+    missing = draft.get("missing") or memo_mod._draft_missing(draft)
+    draft["missing"] = missing
+    if action == "memo_create" or not missing:
+        row = memo_mod.create_memo(db, user_id, draft, source="image" if draft.get("source_kind") == "image" else source, now=now)
+        if row is None:
+            memo_mod.save_pending(db, user_id, draft)
+            return memo_mod.pending_reply(draft), {"kind": "memo", "missing": missing}
+        memo_mod.clear_pending(db, user_id)
+        return memo_mod.created_reply(row), {"kind": "memo", "memo": memo_mod.serialize_memo(row),
+                                             "memos": [memo_mod.serialize_memo(row)]}
+    memo_mod.save_pending(db, user_id, draft)
+    return memo_mod.pending_reply(draft), {"kind": "memo", "missing": missing}
+
+
 def resolve_related(db: Session, user_id: int, data: dict[str, Any], action: str) -> tuple[Transaction | None, list[Transaction]]:
     allowed = ["expense"] if action == "refund" else ["expense", "lend", "deposit", "borrow"]
     query = dict(data.get("target_query") or {})
@@ -78,8 +111,11 @@ def execute(db: Session, user_id: int, data: dict[str, Any], text: str, today: d
             image_path: str, source: str, confirm_duplicate: bool) -> tuple[str, dict[str, Any]]:
     from app.main import apply_ai_change, create_transactions
     action = str(data.get("action") or "chat")
-    if action in {"record", "update", "delete", "undo", "refund", "settle", "budget_set", "budget_delete", "preference_set"}:
+    if action in {"record", "update", "delete", "undo", "refund", "settle", "budget_set", "budget_delete", "preference_set",
+                  "memo", "memo_create", "memo_pending", "memo_cancel_pending"}:
         lock_ledger(db)
+    if action in {"memo", "memo_create", "memo_pending", "memo_cancel_pending"}:
+        return _execute_memo(db, user_id, data, action, text, source)
     payload: dict[str, Any] = {"kind": action}
     if action == "record":
         items = data.get("transactions") or []

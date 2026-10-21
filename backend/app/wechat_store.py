@@ -27,6 +27,10 @@ HELP = ("一笔 · 你的记账搭子\n\n"
         "「昨天花了多少」\n"
         "「把刚才那笔改成32元」\n"
         "「撤销上一步」\n\n"
+        "⏰ 备忘提醒，也可以\n"
+        "「下周三提醒我交房租」（我会再问你几点）\n"
+        "「每周三下午3点提醒我交水电费」\n"
+        "「半小时后提醒我吃药」\n\n"
         "📎 小提示\n"
         "图片 ≤4张 · 每张 ≤8MB\n"
         "语音 ≤2分钟\n"
@@ -79,6 +83,7 @@ def ingest(user_id: int, revision: str, data: dict) -> int:
             WechatDelivery.message_key.in_([digest(str(m.get("message_id") or m.get("client_id")))
                                           for m in messages if isinstance(m, dict)]))).all())
         incoming = []
+        last_context = ""
         for message in messages:
             if not isinstance(message, dict) or message.get("from_user_id") != binding.peer_id:
                 continue
@@ -110,7 +115,11 @@ def ingest(user_id: int, revision: str, data: dict) -> int:
             incoming.append(WechatDelivery(user_id=user_id, revision=revision, peer_hash=peer_hash,
                             message_key=key, envelope_cipher=seal(envelope), client_id="sayledger-" + uuid.uuid4().hex))
             known.add(key)
+            last_context = context
         db.add_all(incoming)
+        if last_context:
+            # 主动提醒（备忘录到点推送）需要用最近一次会话上下文发起发送
+            binding.last_context_cipher = seal(last_context)
         added = len(incoming)
         if cursor:
             binding.cursor_cipher = seal(cursor)

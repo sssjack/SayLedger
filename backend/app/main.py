@@ -33,7 +33,7 @@ from app.auth import (
 from app.branding import APP_DESCRIPTION, APP_NAME, APP_NAME_EN, APP_TAGLINE
 from app.categories import CATEGORIES, normalize_category
 from app.config import settings
-from app.db import Budget, Message, Transaction, User, init_db, utcnow
+from app.db import Budget, Memo, Message, Transaction, User, init_db, utcnow
 from app.finance import (KINDS, RELATED, budget_month, budget_progress, enrich, ensure_unlinked, expense_value,
                          lock_ledger, log_operation, money, preference_data, prepare_fields, save_budget, set_preference, snapshot, undo)
 from app.payments import PAYMENT_METHODS, normalize_payment
@@ -56,9 +56,14 @@ async def lifespan(_app: FastAPI):
     manager = WechatManager()
     _app.state.wechat_manager = manager
     manager.start()
+    from app.memo_worker import MemoManager
+    memo_manager = MemoManager()
+    _app.state.memo_manager = memo_manager
+    memo_manager.start()
     try:
         yield
     finally:
+        await memo_manager.close()
         await manager.close()
 
 
@@ -583,6 +588,96 @@ def text_context(changes: dict[str, Any]) -> str:
 def chat(body: ChatBody, user=Depends(current_user), db: Session = Depends(get_db)):
     from app.chat_service import process_chat
     return process_chat(body, user.id, db)
+
+
+# ---------------------------------------------------------------- 备忘录
+
+
+class MemoBody(BaseModel):
+    content: str | None = None
+    trigger_at: str | None = None
+    recurrence: str | None = None
+    status: str | None = None
+
+
+def _parse_memo_trigger(value: str | None) -> dt.datetime:
+    text = str(value or "").strip()
+    for fmt in ("%Y-%m-%d %H:%M", "%Y-%m-%dT%H:%M", "%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d"):
+        try:
+            parsed = dt.datetime.strptime(text[:19], fmt)
+            return parsed.replace(hour=9) if fmt == "%Y-%m-%d" and parsed.hour == 0 else parsed
+        except ValueError:
+            continue
+    raise HTTPException(400, "提醒时间格式不对，请用 2026-10-28 15:00 这样的格式")
+
+
+def _validate_memo_fields(content: str | None, recurrence: str | None) -> tuple[str, str]:
+    content = str(content or "").strip()
+    if not content:
+        raise HTTPException(400, "备忘内容不能为空")
+    recurrence = recurrence or "none"
+    if recurrence not in ("none", "daily", "weekly"):
+        raise HTTPException(400, "重复方式只能是不重复、每天或每周")
+    return content[:512], recurrence
+
+
+@app.get("/api/memos")
+def list_memos(user=Depends(current_user), db: Session = Depends(get_db), status: str | None = None):
+    from app.memo import serialize_memo
+    query = select(Memo).where(Memo.user_id == user.id)
+    if status:
+        query = query.where(Memo.status == status)
+    rows = list(db.scalars(query.order_by(Memo.status != "active", Memo.next_trigger_at)).all())
+    return {"items": [serialize_memo(row) for row in rows]}
+
+
+@app.post("/api/memos")
+def create_memo_api(body: MemoBody, user=Depends(current_user), db: Session = Depends(get_db)):
+    from app.memo import serialize_memo
+    content, recurrence = _validate_memo_fields(body.content, body.recurrence)
+    trigger = _parse_memo_trigger(body.trigger_at)
+    row = Memo(user_id=user.id, content=content, next_trigger_at=trigger, recurrence=recurrence,
+               weekday=trigger.weekday() if recurrence == "weekly" else None,
+               status="active", source="manual", raw_input=content)
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return {"item": serialize_memo(row)}
+
+
+@app.patch("/api/memos/{memo_id}")
+def update_memo_api(memo_id: int, body: MemoBody, user=Depends(current_user), db: Session = Depends(get_db)):
+    from app.memo import serialize_memo
+    row = db.get(Memo, memo_id)
+    if not row or row.user_id != user.id:
+        raise HTTPException(404, "备忘录不存在")
+    if body.content is not None:
+        row.content, _ = _validate_memo_fields(body.content, row.recurrence)
+    if body.recurrence is not None:
+        _, row.recurrence = _validate_memo_fields(row.content, body.recurrence)
+        row.weekday = row.next_trigger_at.weekday() if row.recurrence == "weekly" else None
+    if body.trigger_at is not None:
+        row.next_trigger_at = _parse_memo_trigger(body.trigger_at)
+        if row.recurrence == "weekly":
+            row.weekday = row.next_trigger_at.weekday()
+    if body.status is not None:
+        if body.status not in ("active", "done", "cancelled"):
+            raise HTTPException(400, "状态只能是 active、done 或 cancelled")
+        row.status = body.status
+    row.updated_at = utcnow()
+    db.commit()
+    db.refresh(row)
+    return {"item": serialize_memo(row)}
+
+
+@app.delete("/api/memos/{memo_id}")
+def delete_memo_api(memo_id: int, user=Depends(current_user), db: Session = Depends(get_db)):
+    row = db.get(Memo, memo_id)
+    if not row or row.user_id != user.id:
+        raise HTTPException(404, "备忘录不存在")
+    db.delete(row)
+    db.commit()
+    return {"ok": True}
 
 
 # ---------------------------------------------------------------- 账单 CRUD

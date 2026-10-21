@@ -115,6 +115,15 @@ export function MessageBubble({ message, categories, payments, onUpdate, onDelet
         )}
         {payload.kind === 'duplicate' && payload.retry && <button disabled={disabled} onClick={() => onSend(payload.retry!.text, payload.retry!.imageIds, true)} className="rounded-full border border-ink-200 px-3 py-1.5 text-[12px] text-ink-700 disabled:opacity-40">这是另一笔，仍然记入</button>}
         {payload.choices && <div className="flex flex-wrap gap-2">{payload.choices.map(choice => <button key={choice.text} disabled={disabled} onClick={() => onSend(choice.text)} className="rounded-lg border border-ink-200 px-2 py-1 text-[12px] disabled:opacity-40">{choice.label}</button>)}</div>}
+        {payload.kind === 'memo' && payload.memo && (
+          <div className="rounded-xl bg-indigo-50/60 p-3 text-[12px] text-ink-600 ring-1 ring-indigo-100">
+            <div className="font-medium text-ink-800">⏰ {payload.memo.content}</div>
+            <div className="mt-1 text-ink-400">
+              {payload.memo.status === 'active' ? `下一次提醒：${payload.memo.nextTriggerAt}` : `提醒时间：${payload.memo.nextTriggerAt}`}
+              {payload.memo.recurrenceLabel ? ` · ${payload.memo.recurrenceLabel}` : ''}
+            </div>
+          </div>
+        )}
         {payload.budgets && <div className="space-y-2">{payload.budgets.map(b => <BudgetProgress key={b.id} budget={b} />)}{payload.budgets.length === 0 && <div className="text-[12px] text-ink-400">还没有预算，可以说“这个月餐饮预算1500”。</div>}</div>}
         {payload.preference && <div className="rounded-xl bg-ink-50 p-3 text-[12px] text-ink-600">默认付款：{payload.preference.payment_method || '不设置'}{Object.entries(payload.preference.rules).map(([merchant, category]) => <div key={merchant} className="mt-1">{merchant} → {category}</div>)}<div className="mt-1 text-ink-400">可以到“管理”查看和取消规则。</div></div>}
         {payload.download && <a href={`${BASE}${payload.download}`} download className="inline-block rounded-full bg-ink-900 px-3 py-1.5 text-[12px] text-white">下载账单 CSV</a>}

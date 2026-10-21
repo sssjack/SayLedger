@@ -119,6 +119,8 @@ class WechatBinding(Base):
     peer_id: Mapped[str] = mapped_column(String(256), unique=True)
     token_cipher: Mapped[str] = mapped_column(Text)
     cursor_cipher: Mapped[str] = mapped_column(Text, default="")
+    # 最近一条入站消息的 context_token（加密），主动提醒（备忘录到点推送）靠它发起会话
+    last_context_cipher: Mapped[str] = mapped_column(Text, default="")
     base_url: Mapped[str] = mapped_column(String(256))
     state: Mapped[str] = mapped_column(String(24), default="connected")
     last_error: Mapped[str] = mapped_column(String(256), default="")
@@ -175,6 +177,39 @@ class WechatWorker(Base):
     heartbeat_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
 
 
+class Memo(Base):
+    """备忘录/提醒：一次性或按天/周重复，到点由后台调度推送。"""
+
+    __tablename__ = "memos"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    content: Mapped[str] = mapped_column(String(512), default="")
+    # 本地时区（LEDGER_TZ）的朴素时间，与 Transaction.occurred_at 口径一致
+    next_trigger_at: Mapped[dt.datetime] = mapped_column(DateTime, index=True)
+    recurrence: Mapped[str] = mapped_column(String(16), default="none", index=True)  # none|daily|weekly
+    weekday: Mapped[int | None] = mapped_column(Integer, nullable=True)  # weekly 时 0=周一 ... 6=周日
+    status: Mapped[str] = mapped_column(String(16), default="active", index=True)  # active|done|cancelled
+    source: Mapped[str] = mapped_column(String(16), default="text")
+    raw_input: Mapped[str] = mapped_column(Text, default="")
+    last_sent_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+    # web_only_no_binding | web_only_no_context | wechat_queued | wechat_failed
+    push_status: Mapped[str] = mapped_column(String(32), default="")
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class MemoPending(Base):
+    """待确认的备忘草稿：缺时刻或缺事件时先存草稿，用户下一句补齐。"""
+
+    __tablename__ = "memo_pending"
+
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    draft_json: Mapped[str] = mapped_column(Text, default="{}")
+    expires_at: Mapped[dt.datetime] = mapped_column(DateTime)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
+
+
 class Message(Base):
     """对话历史，用于让 AI 理解上下文与后续追问。"""
 
@@ -220,19 +255,32 @@ MIGRATIONS: list[tuple[str, str, str]] = [
     ("transactions", "payment_method", "VARCHAR(32) NOT NULL DEFAULT ''"),
     ("transactions", "remark", "VARCHAR(512) NOT NULL DEFAULT ''"),
     ("transactions", "deleted_at", "DATETIME"),
+    ("wechat_bindings", "last_context_cipher", "TEXT NOT NULL DEFAULT ''"),
 ]
+
+
+def _missing_migration_columns(inspector) -> list[tuple[str, str, str]]:
+    """返回当前库里还缺的迁移列；表不存在时由 create_all 按最新结构建，不算缺失。"""
+    missing: list[tuple[str, str, str]] = []
+    tables = set(inspector.get_table_names())
+    columns_cache: dict[str, set[str]] = {}
+    for table, column, ddl in MIGRATIONS:
+        if table not in tables:
+            continue
+        if table not in columns_cache:
+            columns_cache[table] = {c["name"] for c in inspector.get_columns(table)}
+        if column not in columns_cache[table]:
+            missing.append((table, column, ddl))
+    return missing
 
 
 def migrate() -> None:
     from sqlalchemy import text
 
     with engine.begin() as conn:
-        existing = {
-            row[1] for row in conn.execute(text("PRAGMA table_info(transactions)")).fetchall()
-        }
-        for table, column, ddl in MIGRATIONS:
-            if column not in existing:
-                conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}"))
+        inspector = inspect(conn)
+        for table, column, ddl in _missing_migration_columns(inspector):
+            conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}"))
 
 
 def init_db() -> None:
@@ -242,8 +290,7 @@ def init_db() -> None:
         with engine.connect() as connection:
             inspector = inspect(connection)
             if inspector.has_table("transactions"):
-                existing = {column["name"] for column in inspector.get_columns("transactions")}
-                if any(column not in existing for _, column, _ in MIGRATIONS):
+                if _missing_migration_columns(inspector):
                     backup_dir = Path(database_path).resolve().parent / "backups"
                     backup_dir.mkdir(parents=True, exist_ok=True)
                     backup_path = backup_dir / f"ledger-before-upgrade-{dt.datetime.now(dt.timezone.utc):%Y%m%d-%H%M%S-%f}.db"
