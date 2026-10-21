@@ -128,8 +128,19 @@ class WechatAPI:
         codes = [data.get("ret", 0), data.get("errcode", 0)]
         if any(code not in (0, None) for code in codes):
             expired = -14 in codes
+            # 只记录数字错误码，绝不记录响应全文、回复正文或会话凭证。
+            diagnostics = ", ".join(f"{name}={value}" for name, value in
+                                    zip(("ret", "errcode"), codes) if isinstance(value, int) and value != 0)
+            reason = str(data.get("errmsg") or "").lower()
+            categories = [(('context', '上下文'), '会话上下文'), (('client_id',), '消息标识'),
+                          (('rate', 'frequency', '频率'), '请求频率'), (('quota', 'limit', 'reply times', '次数'), '接口额度'),
+                          (('content', '内容'), '消息内容'), (('token', 'session', '会话'), '会话凭证')]
+            category = next((label for words, label in categories if any(word in reason for word in words)), "")
+            if category:
+                diagnostics += "; 原因类别=" + category
+            logging.getLogger(__name__).warning("微信接口业务错误：接口=%s，%s", endpoint, diagnostics or "未返回数字错误码")
             raise WechatError("微信登录已失效，请断开后重新扫码连接。" if expired
-                              else "微信暂未接受请求，服务会自动重试。", expired=expired)
+                              else f"微信暂未接受请求（{diagnostics or '未返回数字错误码'}），服务会自动重试。", expired=expired)
         return data
 
     async def qr(self) -> dict:
