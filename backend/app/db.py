@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import datetime as dt
+import sqlite3
+from contextlib import closing
 from decimal import Decimal
+from pathlib import Path
 from typing import Any
 
 from sqlalchemy import (
@@ -14,6 +17,7 @@ from sqlalchemy import (
     UniqueConstraint,
     create_engine,
     event,
+    inspect,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, sessionmaker
 
@@ -165,5 +169,22 @@ def migrate() -> None:
 
 
 def init_db() -> None:
+    # 第一次升级账务结构前，用 SQLite backup API 连同 WAL 一起备份。
+    database_path = engine.url.database
+    if database_path and database_path != ":memory:":
+        with engine.connect() as connection:
+            inspector = inspect(connection)
+            if inspector.has_table("transactions"):
+                existing = {column["name"] for column in inspector.get_columns("transactions")}
+                if any(column not in existing for _, column, _ in MIGRATIONS):
+                    backup_dir = Path(database_path).resolve().parent / "backups"
+                    backup_dir.mkdir(parents=True, exist_ok=True)
+                    backup_path = backup_dir / f"ledger-before-upgrade-{dt.datetime.now(dt.timezone.utc):%Y%m%d-%H%M%S-%f}.db"
+                    with closing(sqlite3.connect(str(backup_path))) as target:
+                        connection.connection.driver_connection.backup(target)
     Base.metadata.create_all(engine)
     migrate()
+    with engine.begin() as connection:
+        from sqlalchemy import text
+        for column in ("kind", "related_id", "input_fingerprint"):
+            connection.execute(text(f"CREATE INDEX IF NOT EXISTS ix_transactions_{column} ON transactions ({column})"))

@@ -5,7 +5,7 @@ CREDENTIALS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".cr
 REMOTE = "/opt/clockwise-ledger"
 LOCAL = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-SKIP_DIRS = {"node_modules", ".venv", ".localdata", ".shots", "__pycache__", "data", ".git"}
+SKIP_DIRS = {"node_modules", ".venv", ".localdata", ".shots", "__pycache__", "data", ".git", "tests", "test"}
 SKIP_FILES = {"shot.py", "shot2.py", "shot3.py", "shot4.py", "shot5.py", "tools_test.py", ".credentials.json"}
 
 def deployment_credentials():
@@ -24,7 +24,9 @@ def walk(base):
     for root, dirs, files in os.walk(base):
         dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
         for name in files:
-            if name in SKIP_FILES or name.endswith(".pyc"):
+            if (name in SKIP_FILES or name.endswith((".pyc", ".tsbuildinfo", ".db", ".sqlite", ".sqlite3"))
+                    or name == ".env" or name.startswith(".env.")
+                    or name.startswith("test_") or name.endswith(("_test.py", "Test.java", "Tests.java"))):
                 continue
             full = os.path.join(root, name)
             rel = os.path.relpath(full, base).replace("\\", "/")

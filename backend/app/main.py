@@ -225,7 +225,7 @@ def create_transactions(
             item.pop("recoverable_amount", None)
             item["settlement_kind"] = "aa"
         fields = prepare_fields(db, user_id, item)
-        occurred = parse_occurred_at(item.get("occurred_at"), fallback_date, context=raw_input)
+        occurred = parse_occurred_at(item.get("occurred_at"), fallback_date, context="" if fields["kind"] in RELATED else raw_input)
         if occurred.date() > fallback_date:
             raise HTTPException(400, "这笔还没发生，请在实际付款后记账")
         category = item.get("category")
@@ -662,6 +662,7 @@ def create_transaction(body: TransactionBody, user=Depends(current_user), db: Se
 
 @app.patch("/api/transactions/{tx_id}")
 def update_transaction(tx_id: int, body: TransactionBody, user=Depends(current_user), db: Session = Depends(get_db)):
+    lock_ledger(db)
     tx = db.get(Transaction, tx_id)
     if not tx or tx.user_id != user.id or tx.deleted_at is not None:
         raise HTTPException(404, "记录不存在")
@@ -729,6 +730,7 @@ def put_budget(body: BudgetBody, user=Depends(current_user), db: Session = Depen
 
 @app.delete("/api/budgets/{budget_id}")
 def delete_budget(budget_id: int, user=Depends(current_user), db: Session = Depends(get_db)):
+    lock_ledger(db)
     row = db.get(Budget, budget_id)
     if not row or row.user_id != user.id:
         raise HTTPException(404, "预算不存在")

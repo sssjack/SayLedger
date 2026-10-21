@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.categories import CATEGORY_NAMES
 from app.db import Budget, Transaction
-from app.finance import (KINDS, budget_month, budget_progress, enrich, money, preference_data,
+from app.finance import (KINDS, budget_month, budget_progress, enrich, lock_ledger, money, preference_data,
                          save_budget, set_preference, undo)
 from app.query import load_transactions, serialize, summarize
 
@@ -78,6 +78,8 @@ def execute(db: Session, user_id: int, data: dict[str, Any], text: str, today: d
             image_path: str, source: str, confirm_duplicate: bool) -> tuple[str, dict[str, Any]]:
     from app.main import apply_ai_change, create_transactions
     action = str(data.get("action") or "chat")
+    if action in {"record", "update", "delete", "undo", "refund", "settle", "budget_set", "budget_delete", "preference_set"}:
+        lock_ledger(db)
     payload: dict[str, Any] = {"kind": action}
     if action == "record":
         items = data.get("transactions") or []
@@ -112,7 +114,7 @@ def execute(db: Session, user_id: int, data: dict[str, Any], text: str, today: d
             amount = target.amount - target._refunded if action == "refund" else target._pending
         kind = "refund" if action == "refund" else "loan_repayment" if target.kind == "borrow" else "collection"
         rows = create_transactions(db, user_id, [{"amount": amount, "kind": kind, "related_id": target.id,
-            "occurred_at": data.get("occurred_at"), "payment_method": data.get("payment_method"),
+            "occurred_at": data.get("occurred_at") or today.isoformat(), "payment_method": data.get("payment_method"),
             "note": f"{KINDS[kind]} · {target.note or target.merchant or target.counterparty}",
         }], source=source, raw_input=text, image_path=image_path, fallback_date=today, confirm_duplicate=confirm_duplicate)
         db.flush()

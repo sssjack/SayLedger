@@ -202,7 +202,7 @@ def undo(db: Session, user_id: int) -> list[Transaction]:
     after = json.loads(op.after_json)
     before = {item["id"]: item for item in json.loads(op.before_json)}
     ids = [item["id"] for item in after]
-    rows = list(db.scalars(select(Transaction).where(Transaction.user_id == user_id, Transaction.id.in_(ids))).all())
+    rows = list(db.scalars(select(Transaction).where(Transaction.user_id == user_id, Transaction.id.in_(ids)).execution_options(populate_existing=True)).all())
     current = {row.id: row for row in rows}
     if any(item["id"] not in current or snapshot(current[item["id"]]) != item for item in after):
         raise HTTPException(409, "记录已发生变化，无法撤销这次操作")
