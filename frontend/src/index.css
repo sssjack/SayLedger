@@ -1,0 +1,66 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  @apply bg-ink-50 text-ink-900 antialiased;
+  font-feature-settings: 'ss01', 'cv01';
+  overscroll-behavior-y: none;
+}
+
+/* 手机上输入框聚焦时不要被键盘顶飞 */
+@supports (padding: max(0px)) {
+  .safe-bottom {
+    padding-bottom: max(0px, env(safe-area-inset-bottom));
+  }
+}
+
+/* 细滚动条，桌面端不抢视觉 */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  @apply rounded-full bg-ink-200;
+}
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-ink-300;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-full px-4 py-2 text-sm font-medium transition active:scale-[.97] disabled:pointer-events-none disabled:opacity-40;
+  }
+  .btn-primary {
+    @apply btn bg-ink-900 text-white hover:bg-ink-800;
+  }
+  .btn-ghost {
+    @apply btn text-ink-500 hover:bg-ink-100 hover:text-ink-800;
+  }
+  .card {
+    @apply rounded-2xl bg-white shadow-card;
+  }
+  .tab {
+    @apply rounded-full px-3 py-1.5 text-[13px] font-medium text-ink-500 transition;
+  }
+  .tab-active {
+    @apply bg-ink-900 text-white;
+  }
+}

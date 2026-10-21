@@ -1,0 +1,19 @@
+services:
+  # 服务名与镜像名沿用线上的 ledger / clockwise-ledger：
+  # 改了会让 compose 当成新服务去建容器，而旧容器还占着 8421，启动必失败。
+  # 应用对外叫 SayLedger 不影响这里的内部命名。
+  ledger:
+    build: ./backend
+    image: clockwise-ledger:latest
+    container_name: clockwise-ledger
+    restart: unless-stopped
+    env_file: ./backend/.env
+    volumes:
+      - ./data:/data
+    ports:
+      - "8421:8000"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
