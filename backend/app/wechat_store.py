@@ -18,14 +18,19 @@ from app.wechat_api import WechatError, digest, seal, unseal
 from app.wechat_format import format_reply
 from app.wechat_media import WechatInput, WechatMediaError, discard_images, prepare_input
 
-HELP = ("你好呀，我是一笔，你的小账本搭子～\n"
-        "🧾 记一笔：午饭花了28，微信付的\n"
-        "📷 拍小票或发付款截图，我来读金额和商户\n"
-        "🎙️ 按住说话：昨天打车38元\n"
-        "🔎 翻翻账本：这个月餐饮花了多少\n"
-        "✏️ 改一改：把刚才那笔改成32\n"
-        "↩️ 反悔一下：撤销上一步\n"
-        "图片每条最多4张、每张8MB，语音每条最多2分钟。看不清或没听清，我会先问你哦～")
+HELP = ("一笔 · 你的记账搭子\n\n"
+        "🧾 记账，很简单\n"
+        "文字：午饭28元，微信付的\n"
+        "图片：发小票或付款截图\n"
+        "语音：按住说话，直接告诉我\n\n"
+        "🔎 查账，也能随时改\n"
+        "「昨天花了多少」\n"
+        "「把刚才那笔改成32元」\n"
+        "「撤销上一步」\n\n"
+        "📎 小提示\n"
+        "图片 ≤4张 · 每张 ≤8MB\n"
+        "语音 ≤2分钟\n"
+        "看不清或没听清，我会先问你～")
 
 LEGACY_ACK_ERROR = "微信未确认回复已发送，服务会自动重试。"
 
