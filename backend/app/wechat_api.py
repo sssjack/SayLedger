@@ -153,10 +153,9 @@ class WechatAPI:
     async def send(self, base: str, token: str, peer: str, context: str, client_id: str, text: str):
         if not context:
             raise WechatError("消息缺少回复上下文，请在微信里重新发送消息。")
-        data = await self.request("POST", "sendmessage", base=base, token=token, body={"msg": {
+        # 官方发送接口允许省略 ret；request 已校验 HTTP 状态及显式的非零业务错误码。
+        await self.request("POST", "sendmessage", base=base, token=token, body={"msg": {
             "from_user_id": "", "to_user_id": peer, "client_id": client_id,
             "message_type": 2, "message_state": 2, "context_token": context,
             "item_list": [{"type": 1, "text_item": {"text": text}}],
         }})
-        if data.get("ret") != 0:
-            raise WechatError("微信未确认回复已发送，服务会自动重试。")

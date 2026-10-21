@@ -7,7 +7,7 @@ import uuid
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import select, update
+from sqlalchemy import or_, select, update
 
 from app.auth import now_local
 from app.chat_service import ChatPlan, apply_chat, conversation_lock, prepare_chat
@@ -17,8 +17,23 @@ from app.finance import lock_ledger
 from app.wechat_api import WechatError, digest, seal, unseal
 from app.wechat_format import format_reply
 
-HELP = ("可以直接发送：午饭花了28，微信付的；这个月餐饮花了多少；把刚才那笔改成32；撤销上一步。"
-        "\n当前微信入口支持文字。图片、小票和语音请先到网页记录。")
+HELP = ("你好呀，我是一笔，你的小账本搭子～\n"
+        "🧾 记一笔：午饭花了28，微信付的\n"
+        "🔎 翻翻账本：这个月餐饮花了多少\n"
+        "✏️ 改一改：把刚才那笔改成32\n"
+        "↩️ 反悔一下：撤销上一步\n"
+        "微信里先用文字找我哦，图片、小票和语音请到网页记录。")
+
+LEGACY_ACK_ERROR = "微信未确认回复已发送，服务会自动重试。"
+
+
+def reconcile_legacy_acknowledgements(db) -> int:
+    """修正旧版已被接口接受却因缺少 ret 而误判的发送状态，不重发或重做账务。"""
+    result = db.execute(update(WechatDelivery).where(
+        WechatDelivery.state.in_(["reply_pending", "failed"]),
+        WechatDelivery.error == LEGACY_ACK_ERROR,
+    ).values(state="sent", sent_at=utcnow(), retry_at=None, error="", envelope_cipher=""))
+    return result.rowcount
 
 
 def binding_snapshot(user_id: int, revision: str) -> dict | None:
@@ -152,7 +167,7 @@ def process_pending(delivery_id: int, stopped=None):
             elif text in {"帮助", "使用说明", "help"}:
                 plan = ChatPlan(text, [], now_local().date(), {"action": "chat", "reply": HELP})
             else:
-                plan = prepare_chat(db, user_id, body)
+                plan = prepare_chat(db, user_id, body, channel="wechat")
         if stopped is not None and stopped.is_set():
             return
         with SessionLocal.begin() as db:
@@ -174,14 +189,18 @@ def fail_pending(delivery_id: int):
         row = db.get(WechatDelivery, delivery_id)
         if row is not None and row.state == "pending":
             row.state = "reply_pending"
-            row.reply = "这条消息没有完成处理，也没有记入账本。请稍后重试，或到网页手动记录。"
+            row.reply = "🌱 这条消息还没处理好，也没有记入账本。稍后再试一次，或到网页手动记录吧。"
 
 
-def next_delivery(user_id: int, revision: str) -> dict | None:
+def next_delivery(user_id: int, revision: str, *, state: str | None = None,
+                  due_only: bool = False) -> dict | None:
     with SessionLocal() as db:
-        row = db.scalar(select(WechatDelivery).where(WechatDelivery.user_id == user_id,
-            WechatDelivery.revision == revision, WechatDelivery.state.in_(["pending", "reply_pending"]))
-            .order_by(WechatDelivery.id).limit(1))
+        query = select(WechatDelivery).where(WechatDelivery.user_id == user_id,
+            WechatDelivery.revision == revision,
+            WechatDelivery.state.in_([state] if state else ["pending", "reply_pending"]))
+        if due_only:
+            query = query.where(or_(WechatDelivery.retry_at.is_(None), WechatDelivery.retry_at <= utcnow()))
+        row = db.scalar(query.order_by(WechatDelivery.id).limit(1))
         if row is None:
             return None
         return {"id": row.id, "state": row.state, "reply": row.reply, "client_id": row.client_id,

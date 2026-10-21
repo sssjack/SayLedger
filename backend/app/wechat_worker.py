@@ -16,7 +16,7 @@ from app.db import SessionLocal, WechatBinding, WechatDelivery, WechatLogin, Wec
 from app.finance import lock_ledger
 from app.wechat_api import WechatAPI, WechatError, seal, trusted_base, unseal
 from app.wechat_store import (binding_snapshot, fail_pending, ingest, mark_sent, next_delivery,
-                              process_pending, send_failed, set_binding_error)
+                              process_pending, reconcile_legacy_acknowledgements, send_failed, set_binding_error)
 
 logger = logging.getLogger(__name__)
 ACTIVE_LOGINS = {"wait", "scaned", "scaned_but_redirect", "need_verifycode"}
@@ -55,6 +55,8 @@ class WorkerLease:
 
 def runtime_rows() -> tuple[list, list]:
     with SessionLocal.begin() as db:
+        lock_ledger(db)
+        reconcile_legacy_acknowledgements(db)
         worker = db.get(WechatWorker, 1)
         if worker is None:
             db.add(WechatWorker(id=1))
@@ -213,6 +215,7 @@ class WechatManager:
 
     async def binding_loop(self, user_id: int, revision: str):
         tasks = [asyncio.create_task(self.receive_loop(user_id, revision)),
+                 asyncio.create_task(self.processing_loop(user_id, revision)),
                  asyncio.create_task(self.delivery_loop(user_id, revision))]
         try:
             await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
@@ -243,22 +246,31 @@ class WechatManager:
                 failures += 1
             await asyncio.sleep(min(30, 1 + 2 ** min(failures, 4)))
 
-    async def delivery_loop(self, user_id: int, revision: str):
+    async def processing_loop(self, user_id: int, revision: str):
         # 连续追问依赖上一条执行结果，消息必须按顺序使用各自的原子事务。
         while True:
             current = await asyncio.to_thread(binding_snapshot, user_id, revision)
             if current is None:
                 return
-            item = await asyncio.to_thread(next_delivery, user_id, revision)
-            if item is None or (item["retry_at"] and item["retry_at"] > utcnow()):
+            item = await asyncio.to_thread(next_delivery, user_id, revision, state="pending")
+            if item is None:
                 await asyncio.sleep(1)
                 continue
-            if item["state"] == "pending":
-                try:
-                    await asyncio.to_thread(process_pending, item["id"], self.stopped)
-                except Exception as exc:
-                    logger.warning("微信消息未完成处理（%s）", type(exc).__name__)
-                    await asyncio.to_thread(fail_pending, item["id"])
+            try:
+                await asyncio.to_thread(process_pending, item["id"], self.stopped)
+            except Exception as exc:
+                logger.warning("微信消息未完成处理（%s）", type(exc).__name__)
+                await asyncio.to_thread(fail_pending, item["id"])
+
+    async def delivery_loop(self, user_id: int, revision: str):
+        # 已失败回复的退避不能占住队首，新回复仍可正常发送；账务执行顺序由 processing_loop 保证。
+        while True:
+            current = await asyncio.to_thread(binding_snapshot, user_id, revision)
+            if current is None:
+                return
+            item = await asyncio.to_thread(next_delivery, user_id, revision, state="reply_pending", due_only=True)
+            if item is None:
+                await asyncio.sleep(1)
                 continue
             try:
                 context = json.loads(unseal(item["envelope"]))["context"]

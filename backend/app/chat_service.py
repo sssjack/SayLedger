@@ -42,7 +42,8 @@ class ChatPlan:
     error: str = ""
 
 
-def prepare_chat(db: Session, user_id: int, body: Any, *, exclude_current: bool = False) -> ChatPlan:
+def prepare_chat(db: Session, user_id: int, body: Any, *, exclude_current: bool = False,
+                  channel: str = "web") -> ChatPlan:
     from app import main
     from app.conversation import local_intent
 
@@ -71,6 +72,10 @@ def prepare_chat(db: Session, user_id: int, body: Any, *, exclude_current: bool 
                "budgets": budget_progress(db, user_id, today.strftime("%Y-%m"))}
     messages = [{"role": "system", "content": build_system_prompt(today, [serialize(r) for r in recent], context)},
                 *history, {"role": "user", "content": main.build_user_content(text, safe_images)}]
+    if channel == "wechat":
+        messages[0]["content"] += ("\n微信聊天风格：你叫一笔，是温柔可爱的记账搭子。回复简短自然，可用一两处合适的表情，"
+            "不用亲昵称呼，不撒娇过度，不评判用户消费。金额、日期和执行结果必须准确；"
+            "需要补充信息时温柔追问，失败时明确没有记账，不能把未执行动作说成成功。仍严格只输出JSON对象。")
     plan = ChatPlan(text, safe_images, today, {}, body.confirm_duplicate)
     try:
         plan.data = local_intent(text, today) if not safe_images else None
