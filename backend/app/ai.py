@@ -50,6 +50,7 @@ metric 为expense个人净支出、income真实收入、flow流水原始金额�
 18. memo_cancel（取消已保存提醒）：{{"action":"memo_cancel","memo_ids":[12,13]}}。查询/修改/取消都可省略memo_ids由服务器定位当前计划；可用keyword按内容查找，明确要求所有提醒才能用scope:all。目标不唯一必须澄清。
 19. 一句话有多个要求时必须整体规划，不能只执行第一个分句。新建多个不同事项用memo_batch，每项保留自己的日期和时刻；有草稿时“时间你定，还有每4天循环，第三天改20点”须补齐全部草稿，同时带循环和第三天时刻。修改既有计划可以共用changes并带updates：{{"action":"memo_update","memo_ids":[12,13,14],"changes":{{"recurrence":"interval","interval_days":4}},"updates":[{{"memo_ids":[13],"changes":{{"time":"20:00"}}}},{{"memo_ids":[14],"changes":{{"time":"09:00"}}}}],"report_all":true}}。共同changes应用选中的所有步骤，updates只覆盖对应步骤；updates也可单独使用，不同步骤可有各自的循环规则，取消其中一步用changes.status:"cancelled"。整体修改在同一事务保存，有任一要求无法理解或无法支持就clarify，不能先完成前半句并假称整句完成。用户还要核对规则时用report_all:true列出完整结果，不要只返回memo_query漏掉修改。
 明确说“另外新建/新增提醒”时是独立新事项，不能套用上次图片、阶段锚点或循环规则。dialogue.independent_reminder为true时用明确的date+time或trigger_at，禁止用day代替日历日期；多个事项按用户原句的顺序输出，各自保留时间和重复方式。之前修改失败并不代表用户要继续旧计划。
+图片计划中的时间边界是持久规则：即使暂未选择提醒时刻，也必须完整提取time_window、before和any_time；“10点前”必须保留before:"10:00"，不能只选time:"09:00"后丢掉截止规则。补齐草稿时同样保留这些字段，后续改时间仍要遵守原计划边界。
 提醒能力边界：尚不支持自动按月、每隔几分钟/小时、节假日规则、截止后停止或自动执行下单付款。遇到这些规则先clarify说明可用具体日期的多条提醒或固定间隔天数循环，不能丢掉限制后创建无限循环。“提醒下单”只发通知，不执行下单。
 
 上下文理解：先识别最新用户是在记账、询问还是安排提醒，再结合近期对话、图片和dialogue中的上一动作/草稿处理。

@@ -488,6 +488,23 @@ def create_memo(db: Session, user_id: int, draft: dict[str, Any], *, source: str
     return memo
 
 
+def merge_pending_step(raw: dict, pending: dict | None) -> dict:
+    """模型补齐草稿时保留原字段，不能因省略时间边界而丢失限制。"""
+    candidates = (pending or {}).get("batch") or ([pending] if pending else [])
+    day = cn_int(str(raw.get("day") or ""))
+    matching = [step for step in candidates if isinstance(step, dict) and (
+        day and cn_int(str(step.get("day") or "")) == day
+        or not day and raw.get("content") and raw.get("content") == step.get("content"))]
+    if len(matching) != 1:
+        return dict(raw)
+    original = matching[0]
+    merged = {**original, **raw}
+    for key in ("time_window", "before", "any_time", "source_kind"):
+        if key in original:
+            merged[key] = original[key]
+    return merged
+
+
 def normalize_ai_memo(raw: Any, now: dt.datetime, *, anchor: dict | None = None) -> dict[str, Any] | None:
     """把模型的 memo 意图收敛成与解析器相同的草稿结构；无效返回 None。"""
     if not isinstance(raw, dict):

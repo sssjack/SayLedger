@@ -62,6 +62,7 @@ def _execute_memo(db: Session, user_id: int, data: dict[str, Any], action: str,
     auto_time = memo_mod.allows_auto_time(text)
     native_repeat = global_repeat(text) if is_compound(text) else memo_mod.parse_repeat(text)
     scoped_repeats = stage_repeats(text)
+    previous_pending = (context or {}).get("pending_memo") if not (context or {}).get("independent_reminder") else None
     if action == "memo_batch" or draft is not None and isinstance(draft.get("batch"), list):
         raw = draft["batch"] if draft is not None else data.get("memos")
         if not isinstance(raw, list) or not 1 <= len(raw) <= 8 or any(not isinstance(entry, dict) for entry in raw):
@@ -69,6 +70,9 @@ def _execute_memo(db: Session, user_id: int, data: dict[str, Any], action: str,
         drafts = []
         template = []
         for entry in raw:
+            explicit_repeat = "recurrence" in entry
+            if draft is None:
+                entry = memo_mod.merge_pending_step(entry, previous_pending)
             day = memo_mod.cn_int(str(entry.get("day") or ""))
             item = dict(entry) if draft is not None else memo_mod.normalize_ai_memo(entry, now, anchor=anchor)
             if item is None:
@@ -76,7 +80,7 @@ def _execute_memo(db: Session, user_id: int, data: dict[str, Any], action: str,
             repeat = scoped_repeats.get(day) or native_repeat
             if repeat:
                 item.update(repeat)
-            elif isinstance(data.get("repeat"), dict) and "recurrence" not in entry:
+            elif isinstance(data.get("repeat"), dict) and not explicit_repeat:
                 item.update(data["repeat"])
             item = memo_mod.prepare_draft(item, now, auto_time=auto_time, text=text, inherit_repeat=False)
             item.setdefault("raw_input", text)
@@ -95,7 +99,8 @@ def _execute_memo(db: Session, user_id: int, data: dict[str, Any], action: str,
         from app.memo_control import result_reply
         return result_reply(rows, f"已安排{len(rows)}条提醒"), {"kind": "memo", "memos": [memo_mod.serialize_memo(row) for row in rows]}
     if draft is None and isinstance(data.get("memo"), dict):
-        draft = memo_mod.normalize_ai_memo(data["memo"], now, anchor=anchor)
+        raw_memo = memo_mod.merge_pending_step(data["memo"], previous_pending)
+        draft = memo_mod.normalize_ai_memo(raw_memo, now, anchor=anchor)
     if draft is None:
         return "这条备忘我没看明白，可以换个说法再告诉我吗？比如“明天下午3点提醒我开会”。", {"kind": "clarify", "missing": ["memo"]}
     if native_repeat:
