@@ -187,7 +187,11 @@ class Memo(Base):
     content: Mapped[str] = mapped_column(String(512), default="")
     # 本地时区（LEDGER_TZ）的朴素时间，与 Transaction.occurred_at 口径一致
     next_trigger_at: Mapped[dt.datetime] = mapped_column(DateTime, index=True)
-    recurrence: Mapped[str] = mapped_column(String(16), default="none", index=True)  # none|daily|weekly
+    recurrence: Mapped[str] = mapped_column(String(16), default="none", index=True)  # none|daily|weekly|interval
+    interval_days: Mapped[int] = mapped_column(Integer, default=0)
+    plan_id: Mapped[str] = mapped_column(String(32), default="")
+    plan_json: Mapped[str] = mapped_column(Text, default="{}")
+    stage_day: Mapped[int] = mapped_column(Integer, default=0)
     weekday: Mapped[int | None] = mapped_column(Integer, nullable=True)  # weekly 时 0=周一 ... 6=周日
     status: Mapped[str] = mapped_column(String(16), default="active", index=True)  # active|done|cancelled
     source: Mapped[str] = mapped_column(String(16), default="text")
@@ -256,6 +260,10 @@ MIGRATIONS: list[tuple[str, str, str]] = [
     ("transactions", "remark", "VARCHAR(512) NOT NULL DEFAULT ''"),
     ("transactions", "deleted_at", "DATETIME"),
     ("wechat_bindings", "last_context_cipher", "TEXT NOT NULL DEFAULT ''"),
+    ("memos", "interval_days", "INTEGER NOT NULL DEFAULT 0"),
+    ("memos", "plan_id", "VARCHAR(32) NOT NULL DEFAULT ''"),
+    ("memos", "plan_json", "TEXT NOT NULL DEFAULT '{}'"),
+    ("memos", "stage_day", "INTEGER NOT NULL DEFAULT 0"),
 ]
 
 

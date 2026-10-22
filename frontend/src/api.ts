@@ -77,7 +77,10 @@ export type Memo = {
   content: string
   nextTriggerAt: string
   triggerDate: string
-  recurrence: 'none' | 'daily' | 'weekly'
+  recurrence: 'none' | 'daily' | 'weekly' | 'interval'
+  intervalDays: number
+  planId: string
+  stageDay: number
   recurrenceLabel: string
   weekday: number | null
   status: 'active' | 'done' | 'cancelled'
@@ -333,9 +336,9 @@ export const api = {
   saveBudget: (input: { month: string; category: string; event: string; amount: number }) => request<{ items: Budget[] }>('/api/budgets', { method: 'PUT', body: JSON.stringify(input) }),
   deleteBudget: (id: number) => request('/api/budgets/' + id, { method: 'DELETE' }),
   memos: (status?: string) => request<{ items: Memo[] }>(`/api/memos${status ? `?status=${status}` : ''}`),
-  createMemo: (input: { content: string; trigger_at: string; recurrence: string }) =>
+  createMemo: (input: { content: string; trigger_at: string; recurrence: string; interval_days?: number }) =>
     request<{ item: Memo }>('/api/memos', { method: 'POST', body: JSON.stringify(input) }),
-  updateMemo: (id: number, patch: { content?: string; trigger_at?: string; recurrence?: string; status?: string }) =>
+  updateMemo: (id: number, patch: { content?: string; trigger_at?: string; recurrence?: string; interval_days?: number; status?: string }) =>
     request<{ item: Memo }>(`/api/memos/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
   deleteMemo: (id: number) => request<{ ok: boolean }>(`/api/memos/${id}`, { method: 'DELETE' }),
   preferences: () => request<Preference>('/api/preferences'),

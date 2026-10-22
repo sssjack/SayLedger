@@ -16,7 +16,7 @@ from typing import Any
 from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StrictInt
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
@@ -598,6 +598,7 @@ class MemoBody(BaseModel):
     content: str | None = None
     trigger_at: str | None = None
     recurrence: str | None = None
+    interval_days: StrictInt | None = None
     status: str | None = None
 
 
@@ -617,8 +618,8 @@ def _validate_memo_fields(content: str | None, recurrence: str | None) -> tuple[
     if not content:
         raise HTTPException(400, "备忘内容不能为空")
     recurrence = recurrence or "none"
-    if recurrence not in ("none", "daily", "weekly"):
-        raise HTTPException(400, "重复方式只能是不重复、每天或每周")
+    if recurrence not in ("none", "daily", "weekly", "interval"):
+        raise HTTPException(400, "重复方式支持不重复、每天、每周或每隔几天")
     return content[:512], recurrence
 
 
@@ -634,10 +635,11 @@ def list_memos(user=Depends(current_user), db: Session = Depends(get_db), status
 
 @app.post("/api/memos")
 def create_memo_api(body: MemoBody, user=Depends(current_user), db: Session = Depends(get_db)):
-    from app.memo import serialize_memo
+    from app.memo import repetition, serialize_memo
     content, recurrence = _validate_memo_fields(body.content, body.recurrence)
+    recurrence, interval_days = repetition({"recurrence": recurrence, "interval_days": body.interval_days})
     trigger = _parse_memo_trigger(body.trigger_at)
-    row = Memo(user_id=user.id, content=content, next_trigger_at=trigger, recurrence=recurrence,
+    row = Memo(user_id=user.id, content=content, next_trigger_at=trigger, recurrence=recurrence, interval_days=interval_days,
                weekday=trigger.weekday() if recurrence == "weekly" else None,
                status="active", source="manual", raw_input=content)
     db.add(row)
@@ -648,14 +650,15 @@ def create_memo_api(body: MemoBody, user=Depends(current_user), db: Session = De
 
 @app.patch("/api/memos/{memo_id}")
 def update_memo_api(memo_id: int, body: MemoBody, user=Depends(current_user), db: Session = Depends(get_db)):
-    from app.memo import serialize_memo
+    from app.memo import repetition, serialize_memo
     row = db.get(Memo, memo_id)
     if not row or row.user_id != user.id:
         raise HTTPException(404, "备忘录不存在")
     if body.content is not None:
         row.content, _ = _validate_memo_fields(body.content, row.recurrence)
-    if body.recurrence is not None:
-        _, row.recurrence = _validate_memo_fields(row.content, body.recurrence)
+    if body.recurrence is not None or body.interval_days is not None:
+        row.recurrence, row.interval_days = repetition({"recurrence": body.recurrence or row.recurrence,
+            "interval_days": body.interval_days if body.interval_days is not None else (0 if body.recurrence is not None else row.interval_days)})
         row.weekday = row.next_trigger_at.weekday() if row.recurrence == "weekly" else None
     if body.trigger_at is not None:
         row.next_trigger_at = _parse_memo_trigger(body.trigger_at)

@@ -23,7 +23,7 @@ from sqlalchemy import select
 from app import memo as memo_mod
 from app.auth import now_local
 from app.config import settings
-from app.db import Memo, SessionLocal, WechatBinding, WechatDelivery
+from app.db import Memo, Message, SessionLocal, WechatBinding, WechatDelivery, utcnow
 from app.finance import lock_ledger
 from app.wechat_api import digest, seal
 
@@ -75,16 +75,19 @@ def fire_due_memos(now: dt.datetime | None = None) -> int:
         due = list(db.scalars(select(Memo).where(
             Memo.status == "active", Memo.next_trigger_at <= now,
         ).order_by(Memo.next_trigger_at)).all())
+        bindings = {row.user_id: row for row in db.scalars(select(WechatBinding).where(
+            WechatBinding.user_id.in_({memo.user_id for memo in due}))).all()}
+        keys = {digest(f"memo:{memo.id}:{memo.next_trigger_at.isoformat()}") for memo in due}
+        existing = set(db.scalars(select(WechatDelivery.message_key).where(WechatDelivery.message_key.in_(keys))).all())
+        messages, deliveries, updates = [], [], []
         for memo in due:
             trigger = memo.next_trigger_at
             text = memo_mod.build_reminder_text(memo, trigger)
             serialized = memo_mod.serialize_memo(memo)
-            from app.main import save_message
-
-            save_message(db, memo.user_id, "assistant", text,
-                         {"kind": "memo", "memo": serialized, "fired": True})
+            messages.append(Message(user_id=memo.user_id, role="assistant", content=text,
+                                    payload_json=json.dumps({"kind": "memo", "memo": serialized, "fired": True}, ensure_ascii=False)))
             push_status = "web_only_no_binding"
-            binding = db.get(WechatBinding, memo.user_id)
+            binding = bindings.get(memo.user_id)
             if binding is not None and binding.state == "connected":
                 context = ""
                 if binding.last_context_cipher:
@@ -96,12 +99,10 @@ def fire_due_memos(now: dt.datetime | None = None) -> int:
                         context = ""
                 if context:
                     key = digest(f"memo:{memo.id}:{trigger.isoformat()}")
-                    exists = db.scalar(select(WechatDelivery.id).where(
-                        WechatDelivery.user_id == memo.user_id, WechatDelivery.message_key == key))
-                    if exists is None:
+                    if key not in existing:
                         envelope = json.dumps({"context": context, "proactive": True,
                                                  "memo_id": memo.id}, ensure_ascii=False)
-                        db.add(WechatDelivery(
+                        deliveries.append(WechatDelivery(
                             user_id=memo.user_id, revision=binding.revision,
                             peer_hash=digest(binding.peer_id), message_key=key,
                             envelope_cipher=seal(envelope), state="reply_pending", reply=text,
@@ -110,13 +111,16 @@ def fire_due_memos(now: dt.datetime | None = None) -> int:
                     push_status = "wechat_queued"
                 else:
                     push_status = "web_only_no_context"
-            memo.push_status = push_status
-            memo.last_sent_at = now
-            if memo.recurrence in ("daily", "weekly"):
-                memo.next_trigger_at = memo_mod.next_after(trigger, memo.recurrence, now)
+            update = {"id": memo.id, "push_status": push_status, "last_sent_at": now, "updated_at": utcnow()}
+            if memo.recurrence in ("daily", "weekly", "interval"):
+                update["next_trigger_at"] = memo_mod.next_after(trigger, memo.recurrence, now, memo.interval_days)
             else:
-                memo.status = "done"
+                update["status"] = "done"
+            updates.append(update)
             fired += 1
+        if updates:
+            db.bulk_update_mappings(Memo, updates)
+        db.add_all([*messages, *deliveries])
     return fired
 
 

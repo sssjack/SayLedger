@@ -22,6 +22,7 @@ export function MemosPanel({ refreshKey, onChanged }: Props) {
   const [content, setContent] = useState('')
   const [triggerAt, setTriggerAt] = useState(defaultTrigger)
   const [recurrence, setRecurrence] = useState('none')
+  const [intervalDays, setIntervalDays] = useState(4)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -62,6 +63,7 @@ export function MemosPanel({ refreshKey, onChanged }: Props) {
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="text-[13px] font-medium text-ink-900">{memo.content}</span>
+          {!!memo.stageDay && <span className="text-[10.5px] text-ink-400">计划第{memo.stageDay}天</span>}
           {memo.recurrenceLabel && (
             <span className="rounded-full bg-indigo-50 px-1.5 py-0.5 text-[10.5px] text-indigo-600">{memo.recurrenceLabel}</span>
           )}
@@ -105,7 +107,8 @@ export function MemosPanel({ refreshKey, onChanged }: Props) {
             event.preventDefault()
             if (!content.trim()) { setError('备忘内容不能为空'); return }
             void run(async () => {
-              await api.createMemo({ content: content.trim(), trigger_at: triggerAt.replace('T', ' '), recurrence })
+              await api.createMemo({ content: content.trim(), trigger_at: triggerAt.replace('T', ' '), recurrence,
+                interval_days: recurrence === 'interval' ? intervalDays : undefined })
               setContent('')
             })
           }}
@@ -117,11 +120,16 @@ export function MemosPanel({ refreshKey, onChanged }: Props) {
               <option value="none">不重复</option>
               <option value="daily">每天</option>
               <option value="weekly">每周</option>
+              <option value="interval">每隔几天</option>
             </select>
             <button disabled={busy} className="rounded-lg bg-ink-900 px-3 py-2 text-[12px] text-white disabled:opacity-40">添加</button>
           </div>
+          {recurrence === 'interval' && <label className="col-span-2 flex items-center gap-2 text-[12px] text-ink-600">
+            每 <input aria-label="循环间隔天数" type="number" min={1} max={365} required value={intervalDays}
+              onChange={(event) => setIntervalDays(Number(event.target.value))} className={`${input} w-20`} /> 天重复一次
+          </label>}
         </form>
-        <p className="text-[11px] text-ink-400">选「每周」时按提醒时间所在的星期重复；提醒文案由小助手现场发挥，保证可爱。</p>
+        <p className="text-[11px] text-ink-400">每隔几天会从首次提醒日期开始循环；也可以在聊天中查询或修改整份计划。</p>
       </section>
       {finished.length > 0 && (
         <section className="card space-y-3 p-4">

@@ -9,9 +9,11 @@ from __future__ import annotations
 import datetime as dt
 import json
 import re
+import uuid
 from typing import Any
 
 from sqlalchemy.orm import Session
+from fastapi import HTTPException
 
 from app.db import Memo, MemoPending, utcnow
 
@@ -20,7 +22,7 @@ WEEKDAY_NAMES = ["周一", "周二", "周三", "周四", "周五", "周六", "�
 _WEEKDAY_CHARS = {"一": 0, "二": 1, "三": 2, "四": 3, "五": 4, "六": 5, "日": 6, "天": 6,
                   "1": 0, "2": 1, "3": 2, "4": 3, "5": 4, "6": 5, "7": 6}
 _CN_DIGITS = {"零": 0, "一": 1, "二": 2, "两": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9}
-_NUM = r"(?:\d{1,2}|[零一二两三四五六七八九十]+)"
+_NUM = r"(?:\d+|[零一二两三四五六七八九十]+)"
 
 
 def cn_int(raw: str | None) -> int | None:
@@ -29,7 +31,7 @@ def cn_int(raw: str | None) -> int | None:
         return None
     raw = raw.strip()
     if raw.isdigit():
-        return int(raw)
+        return int(raw) if len(raw) <= 6 else None
     if raw == "十":
         return 10
     if "十" in raw:
@@ -139,9 +141,57 @@ _MEMO_HINT = re.compile(r"提醒|备忘|闹钟")
 _CANCEL_WORDS = {"取消", "算了", "不用了", "不要了", "取消备忘", "取消提醒", "先不记了", "不记了"}
 
 
+def is_status_question(text: str) -> bool:
+    compact = re.sub(r"\s+", "", text or "")
+    if not re.search(r"提醒|备忘|闹钟|循环|重复", compact):
+        return False
+    return bool(re.search(r"(?:现在|目前|当前|已经|设置的|我的|刚才的).*(?:吗|么|是不是|是否|哪些|什么|几|循环|重复)", compact)
+                or re.search(r"(?:是不是|是否|有没有|有哪些|查询|查看|看看|列出|什么|多久|下一次).*提醒", compact)
+                or re.search(r"提醒.*(?:是什么|有哪些|什么时候|几点|是否|吗|么|？|\?)", compact)) and not bool(re.search(r"改成|改为|修改|帮我改|能不能|可不可以|提醒我|帮我.*提醒", compact))
+
+
+def allows_auto_time(text: str) -> bool:
+    return bool(re.search(r"你看着办|你来定|你定|你决定|自行安排|自己安排|你来安排|你安排|看着安排|帮我选|合适的时间|时间随便|时间你定|就按你说的", text or ""))
+
+
+def parse_repeat(text: str) -> dict | None:
+    targets = re.split(r"改成|改为|调整为|换成", text)
+    text = targets[-1]
+    candidates = []
+    for match in re.finditer(r"不再循环|不要循环|不重复|取消循环|取消重复|只提醒一次", text):
+        candidates.append((match.start(), {"recurrence": "none", "interval_days": 0}))
+    for match in re.finditer(rf"(?:每隔?|隔)\s*({_NUM})\s*天|({_NUM})\s*天\s*(?:一(?:个|轮|次)?|为(?:一个)?)?\s*(?:循环|周期|重复)", text):
+        days = cn_int(match[1] or match[2])
+        candidates.append((match.start(), {"recurrence": "interval", "interval_days": days}))
+    for pattern, recurrence, days in ((r"每天|每日", "daily", 1), (r"每周|每星期", "weekly", 7)):
+        candidates.extend((match.start(), {"recurrence": recurrence, "interval_days": days}) for match in re.finditer(pattern, text))
+    if not candidates:
+        return None
+    repeat = max(candidates, key=lambda candidate: candidate[0])[1]
+    repetition(repeat)
+    return repeat
+
+
+def repetition(raw: dict) -> tuple[str, int]:
+    recurrence = str(raw.get("recurrence") or "none")
+    days = raw.get("interval_days", 0) or 0
+    if recurrence not in {"none", "daily", "weekly", "interval"}:
+        raise HTTPException(400, "暂不支持这种循环方式，请说明是否每隔几天重复。")
+    if recurrence == "interval":
+        if isinstance(days, bool) or not isinstance(days, int) or not 1 <= days <= 365:
+            raise HTTPException(400, "循环间隔需要是1到365之间的整数天。")
+    else:
+        expected = {"none": 0, "daily": 1, "weekly": 7}[recurrence]
+        if days not in (0, expected):
+            raise HTTPException(400, "自定义天数需要选择每隔几天循环。")
+        days = expected
+    return recurrence, days
+
+
 def _clean_content(text: str) -> str:
     cleaned = text
     for pattern in (
+        rf"(?:每隔?|隔)\s*{_NUM}\s*天",
         r"每周[一二三四五六日天1-7]?", r"每个?星期[一二三四五六日天1-7]?", r"每天|每日",
         r"下下周[一二三四五六日天1-7]|下周[一二三四五六日天1-7]|下个?星期[一二三四五六日天1-7]",
         r"这周[一二三四五六日天1-7]|本周[一二三四五六日天1-7]|这个?星期[一二三四五六日天1-7]",
@@ -179,7 +229,8 @@ def _draft_missing(draft: dict[str, Any]) -> list[str]:
 def build_trigger(draft: dict[str, Any], now: dt.datetime) -> dt.datetime | None:
     """草稿信息齐了之后算出下一次触发时间；信息不齐返回 None。"""
     if draft.get("trigger_at"):
-        return dt.datetime.fromisoformat(draft["trigger_at"])
+        candidate = dt.datetime.fromisoformat(draft["trigger_at"])
+        return next_after(candidate, draft["recurrence"], now, draft.get("interval_days", 0)) if candidate <= now and draft.get("recurrence") in {"daily", "weekly", "interval"} else candidate
     if _draft_missing(draft):
         return None
     hour, minute = (int(part) for part in draft["time"].split(":"))
@@ -197,11 +248,14 @@ def build_trigger(draft: dict[str, Any], now: dt.datetime) -> dt.datetime | None
             candidate += dt.timedelta(days=7)
         return candidate
     if draft.get("date"):
-        return dt.datetime.combine(dt.date.fromisoformat(draft["date"]), clock)
-    if draft.get("time_only"):
+        candidate = dt.datetime.combine(dt.date.fromisoformat(draft["date"]), clock)
+        if recurrence == "interval" and candidate <= now:
+            candidate = next_after(candidate, recurrence, now, draft.get("interval_days", 0))
+        return candidate
+    if draft.get("time_only") or recurrence == "interval":
         candidate = dt.datetime.combine(now.date(), clock)
         if candidate <= now:
-            candidate += dt.timedelta(days=1)
+            candidate += dt.timedelta(days=repetition(draft)[1] or 1)
         return candidate
     return None
 
@@ -209,7 +263,8 @@ def build_trigger(draft: dict[str, Any], now: dt.datetime) -> dt.datetime | None
 def parse_memo_request(text: str, now: dt.datetime) -> dict[str, Any] | None:
     """解析一句备忘请求；不是备忘意图返回 None，否则返回草稿 dict（含 missing）。"""
     text = (text or "").strip()
-    if not text or not _MEMO_HINT.search(text):
+    if (not text or not _MEMO_HINT.search(text) or is_status_question(text)
+            or re.search(r"看着办|你定|你安排|自行安排|修改|改成|改为|取消|循环|是不是|是否|[吗么？?]|工作日|周末|每月|每个月|小时一次|分钟一次|持续|直到|截止|除了|分别|每天.*[次遍]", text)):
         return None
     today = now.date()
     draft: dict[str, Any] = {"content": "", "trigger_at": None, "date": None, "time": None,
@@ -241,6 +296,9 @@ def parse_memo_request(text: str, now: dt.datetime) -> dict[str, Any] | None:
         draft.update(recurrence="weekly", date_desc="每周")
     if "每天" in text or "每日" in text:
         draft.update(recurrence="daily", date_desc="每天")
+    interval = parse_repeat(text)
+    if interval and interval["recurrence"] == "interval":
+        draft.update(interval, date_desc=f"每{interval['interval_days']}天")
 
     if draft["recurrence"] == "none":
         date_value, _matched, desc = parse_date(text, today)
@@ -261,6 +319,8 @@ def parse_memo_request(text: str, now: dt.datetime) -> dict[str, Any] | None:
 def continue_pending(text: str, draft: dict[str, Any], now: dt.datetime) -> tuple[str, dict[str, Any]]:
     """用户在有草稿时说的下一句：返回 (create|ask|cancel|unrelated, 新草稿或说明)。"""
     compact = re.sub(r"[\s，。！？!?]", "", text or "")
+    if is_status_question(text) or allows_auto_time(text) or re.search(r"循环|重复|修改|改成.*(?:每|循环)", text):
+        return "unrelated", draft
     if compact in _CANCEL_WORDS or "取消" in compact and len(compact) <= 8:
         return "cancel", draft
     if (re.search(r"查账|账单|预算|撤销|花了|花多少|多少钱|支出|收入|昨天|上周|上个月", compact)
@@ -274,7 +334,7 @@ def continue_pending(text: str, draft: dict[str, Any], now: dt.datetime) -> tupl
         kind, updated = continue_pending(text, entries[incomplete[0]], now)
         if kind in {"create", "ask"}:
             entries[incomplete[0]] = updated
-            return ("create" if kind == "create" else "ask"), {"batch": entries}
+            return ("create" if kind == "create" else "ask"), {**draft, "batch": entries}
         return kind, draft
     merged = dict(draft)
     reparsed = parse_memo_request(text, now) if _MEMO_HINT.search(text or "") else None
@@ -338,6 +398,8 @@ def pending_reply(draft: dict[str, Any]) -> str:
             return "这份计划还没有创建提醒。\n" + pending_reply(incomplete[0])
         return "这份计划有几处内容或时间还不清楚，还没有创建提醒。请补充对应的步骤和具体提醒时间。"
     missing = draft.get("missing") or _draft_missing(draft)
+    if "stage_anchor" in missing:
+        return "这份计划还没有创建提醒。今天是计划的第几天呢？"
     if "future_time" in missing:
         return f"「{draft.get('content') or '这件事'}」的时间已经过去，还没有创建提醒。要改到哪一天、几点呢？"
     if "time" in missing:
@@ -365,6 +427,8 @@ def format_trigger(value: dt.datetime) -> str:
 
 
 def repeat_label(memo: Memo) -> str:
+    if memo.recurrence == "interval":
+        return f"每{memo.interval_days}天循环"
     if memo.recurrence == "daily":
         return "每天重复"
     if memo.recurrence == "weekly":
@@ -382,7 +446,8 @@ def get_pending(db: Session, user_id: int) -> dict[str, Any] | None:
     if row.expires_at <= utcnow():
         return None
     try:
-        return json.loads(row.draft_json or "{}")
+        draft = json.loads(row.draft_json or "{}")
+        return None if is_status_question(str(draft.get("raw_input") or "")) else draft
     except Exception:
         return None
 
@@ -407,13 +472,14 @@ def clear_pending(db: Session, user_id: int) -> None:
 
 def create_memo(db: Session, user_id: int, draft: dict[str, Any], *, source: str, now: dt.datetime) -> Memo | None:
     trigger = build_trigger(draft, now)
-    if trigger is None or not draft.get("content"):
+    if draft.get("missing") or trigger is None or not draft.get("content"):
         return None
     if trigger <= now:
         draft["missing"] = ["future_time"]
         return None
     memo = Memo(user_id=user_id, content=str(draft["content"])[:512], next_trigger_at=trigger,
                 recurrence=draft.get("recurrence") or "none",
+                interval_days=repetition(draft)[1],
                 weekday=draft.get("weekday") if draft.get("recurrence") == "weekly" else None,
                 status="active", source=source, raw_input=str(draft.get("raw_input") or "")[:2000])
     if memo.recurrence == "weekly" and memo.weekday is None:
@@ -427,15 +493,15 @@ def normalize_ai_memo(raw: Any, now: dt.datetime, *, anchor: dict | None = None)
     """把模型的 memo 意图收敛成与解析器相同的草稿结构；无效返回 None。"""
     if not isinstance(raw, dict):
         return None
+    if any(raw.get(key) is not None for key in ("end_date", "until", "cron", "weekdays", "count", "end_at")):
+        raise HTTPException(400, "这种带截止日期或特殊周期的安排还不能完整保存。可以改为具体日期的多条提醒，或每隔几天循环。")
     content = str(raw.get("content") or raw.get("note") or "").strip()[:200]
-    recurrence = str(raw.get("recurrence") or "none")
-    if recurrence not in ("none", "daily", "weekly"):
-        recurrence = "none"
+    recurrence, interval_days = repetition(raw)
     weekday = raw.get("weekday")
     if isinstance(weekday, bool) or not isinstance(weekday, int) or not 0 <= weekday <= 6:
         weekday = None
     draft: dict[str, Any] = {"content": content, "trigger_at": None, "date": None, "time": None,
-                             "recurrence": recurrence, "weekday": weekday, "date_desc": "",
+                             "recurrence": recurrence, "interval_days": interval_days, "weekday": weekday, "date_desc": "",
                              "time_only": False, "raw_input": ""}
     trigger_raw = str(raw.get("trigger_at") or raw.get("remind_at") or "").strip()
     trigger = None
@@ -467,10 +533,17 @@ def normalize_ai_memo(raw: Any, now: dt.datetime, *, anchor: dict | None = None)
         if clock and matched.strip() == time_raw:
             draft["time"] = clock.strftime("%H:%M")
     day = cn_int(str(raw.get("day") or ""))
+    if day and 1 <= day <= 60:
+        draft["day"] = day
     if day and 1 <= day <= 60 and anchor:
         draft["trigger_at"] = None
         draft["date"] = (dt.date.fromisoformat(anchor["date"]) + dt.timedelta(days=day - anchor["day"])).isoformat()
         draft["date_desc"] = f"计划第{day}天"
+    if day and not anchor:
+        draft["stage_unresolved"] = True
+    for key in ("time_window", "before", "any_time"):
+        if key in raw:
+            draft[key] = raw[key]
     if draft["recurrence"] == "weekly" and draft["weekday"] is not None:
         draft["date_desc"] = "每" + WEEKDAY_NAMES[draft["weekday"]]
     elif draft["recurrence"] == "daily":
@@ -479,18 +552,77 @@ def normalize_ai_memo(raw: Any, now: dt.datetime, *, anchor: dict | None = None)
     return draft
 
 
-def create_memos(db: Session, user_id: int, drafts: list[dict], *, source: str, now: dt.datetime) -> list[Memo]:
+def prepare_draft(draft: dict, now: dt.datetime, *, auto_time: bool, text: str) -> dict:
+    """保留时间边界；只有用户授权时才选择默认时间。"""
+    draft = dict(draft)
+    repeat = parse_repeat(text)
+    if repeat:
+        draft.update(repeat)
+    recurrence, days = repetition(draft)
+    draft.update(recurrence=recurrence, interval_days=days)
+    if draft.get("trigger_at"):
+        try:
+            trigger = dt.datetime.fromisoformat(str(draft["trigger_at"]))
+            if trigger.tzinfo is not None:
+                raise ValueError("timezone")
+            draft.update(date=trigger.date().isoformat(), time=trigger.strftime("%H:%M"))
+        except ValueError:
+            raise HTTPException(400, "提醒时间格式无效，请提供本地日期和时刻。") from None
+    start, end = dt.time(0), dt.time(23, 59)
+    constrained = False
+    window = draft.get("time_window")
+    if window:
+        if not isinstance(window, dict):
+            raise HTTPException(400, "时间范围没看清，请补充开始和结束时刻。")
+        start = parse_clock(str(window.get("start") or ""))[0]
+        end = parse_clock(str(window.get("end") or ""))[0]
+        if start is None or end is None or start > end:
+            raise HTTPException(400, "时间范围无效，请给出同一天内的开始和结束时刻。")
+        constrained = True
+    if draft.get("before"):
+        deadline = parse_clock(str(draft["before"]))[0]
+        if deadline is None or deadline == dt.time(0):
+            raise HTTPException(400, "截止时间无效，请补充具体时刻。")
+        end = min(end, (dt.datetime.combine(now.date(), deadline) - dt.timedelta(minutes=1)).time())
+        constrained = True
+    clock = parse_clock(str(draft.get("time") or ""))[0]
+    if constrained and clock and not start <= clock <= end:
+        raise HTTPException(400, "提醒时间超出了计划允许的时间范围，还没有保存，请重新选择。")
+    explicit_clock = parse_clock(text)[0]
+    if (constrained or draft.get("any_time")) and not auto_time and not explicit_clock:
+        draft.update(time=None, trigger_at=None)
+        clock = None
+    if not clock and auto_time:
+        low, high = start.hour * 60 + start.minute, end.hour * 60 + end.minute
+        if draft.get("date") == now.date().isoformat():
+            low = max(low, now.hour * 60 + now.minute + 1)
+        if low <= high:
+            selected = (low + high) // 2 if window else min(max(9 * 60, low), high)
+            if draft.get("before") and not window:
+                selected = max(low, min(selected, high - 59))
+            draft.update(time=f"{selected // 60:02}:{selected % 60:02}", trigger_at=None)
+    draft["missing"] = _draft_missing(draft)
+    if draft.get("stage_unresolved"):
+        draft["missing"].append("stage_anchor")
+    return draft
+
+
+def create_memos(db: Session, user_id: int, drafts: list[dict], *, source: str, now: dt.datetime,
+                 template: list[dict] | None = None, anchor: dict | None = None) -> list[Memo]:
     """先验证整份计划，再一次性新增；缺信息时不安排部分步骤。"""
     rows = []
+    plan_id = uuid.uuid4().hex
     for draft in drafts:
         trigger = build_trigger(draft, now)
-        if trigger is None or not draft.get("content"):
+        if draft.get("missing") or trigger is None or not draft.get("content"):
             continue
         if trigger <= now:
             draft["missing"] = ["future_time"]
             continue
         rows.append(Memo(user_id=user_id, content=draft["content"][:512], next_trigger_at=trigger,
-                         recurrence=draft.get("recurrence") or "none", weekday=draft.get("weekday"),
+                         recurrence=draft.get("recurrence") or "none", interval_days=repetition(draft)[1],
+                         weekday=trigger.weekday() if draft.get("recurrence") == "weekly" else None,
+                         plan_id=plan_id, plan_json=json.dumps({"steps": template or drafts, "anchor": anchor, "step": draft}, ensure_ascii=False), stage_day=draft.get("day", 0),
                          status="active", source=source, raw_input=str(draft.get("raw_input") or "")[:2000]))
     if len(rows) != len(drafts):
         return []
@@ -508,6 +640,9 @@ def serialize_memo(memo: Memo) -> dict[str, Any]:
         "nextTriggerAt": memo.next_trigger_at.strftime("%Y-%m-%d %H:%M") if memo.next_trigger_at else "",
         "triggerDate": memo.next_trigger_at.strftime("%Y-%m-%d") if memo.next_trigger_at else "",
         "recurrence": memo.recurrence,
+        "intervalDays": memo.interval_days,
+        "planId": memo.plan_id,
+        "stageDay": memo.stage_day,
         "recurrenceLabel": repeat_label(memo),
         "weekday": memo.weekday,
         "status": memo.status,
@@ -537,10 +672,10 @@ def build_reminder_text(memo: Memo, when: dt.datetime) -> str:
     return text
 
 
-def next_after(trigger: dt.datetime, recurrence: str, now: dt.datetime) -> dt.datetime:
+def next_after(trigger: dt.datetime, recurrence: str, now: dt.datetime, interval_days: int = 0) -> dt.datetime:
     """重复备忘顺延到下一次（跳过已经错过的周期，避免补发风暴）。"""
-    step = dt.timedelta(days=1) if recurrence == "daily" else dt.timedelta(days=7)
-    candidate = trigger + step
-    while candidate <= now:
-        candidate += step
-    return candidate
+    _, days = repetition({"recurrence": recurrence, "interval_days": interval_days})
+    if not days:
+        raise ValueError("一次性提醒没有下一个周期")
+    step = dt.timedelta(days=days)
+    return trigger + step * max(1, (now - trigger) // step + 1)

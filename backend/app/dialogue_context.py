@@ -62,15 +62,24 @@ def load_context(db, user_id: int, text: str, *, channel: str, exclude_current: 
     last_payload = payload_of(last_assistant) if last_assistant else {}
     unresolved = bool(last_payload.get("kind") in {"clarify", "memo"}
                       and (last_payload.get("missing") or last_payload.get("kind") == "clarify"))
-    reference = needs_context(text) or bool(pending and needs_context(str(pending.get("content", ""))))
+    reference = needs_context(text) or bool(re.search(r"你看着办|你来定|你安排|循环|重复|这组|改成|改为", text)) or bool(pending)
     independent = bool(re.search(r"查账|账单|预算|花了多少|花多少|花费多少|收入多少", text)
                        or (re.search(r"午饭|晚饭|早餐|咖啡|打车|买了", text) and re.search(r"\d", text)))
-    result.followup = reference or (unresolved and len(text) <= 100 and not independent)
+    result.followup = needs_context(text) or ((reference or unresolved and len(text) <= 100) and not independent)
     last_action = {key: last_payload[key] for key in ("kind", "missing", "query", "range", "memo", "memos")
                    if key in last_payload}
     if last_payload.get("transactions"):
         last_action["transaction_ids"] = [row["id"] for row in last_payload["transactions"] if "id" in row]
     result.state = {"last_action": last_action, "pending_memo": pending}
+    for row in rows:
+        if row.role != "assistant":
+            continue
+        payload = payload_of(row)
+        memos = payload.get("memos") or ([payload["memo"]] if payload.get("memo") else [])
+        if memos:
+            result.state["memo_focus_ids"] = [item["id"] for item in memos if isinstance(item, dict) and type(item.get("id")) is int]
+            result.state["memo_focus_kind"] = payload.get("kind")
+            break
     anchor = stage_anchor(text, today)
     if anchor is None and result.followup:
         for row in rows:

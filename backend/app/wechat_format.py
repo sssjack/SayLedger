@@ -111,8 +111,8 @@ def _headline(reply: str, payload: dict) -> str:
         return "↩️ " + reply
     if kind == "duplicate":
         return "👀 这笔看起来有点眼熟，先帮你拦一下～\n" + reply
-    if kind == "memo":
-        return "⏰ " + reply
+    if kind in {"memo", "memo_query"}:
+        return reply if reply.startswith(("📌", "📭", "🌿", "⏰")) else "⏰ " + reply
     if kind == "preference":
         return "🪄 记住啦，以后会按你的习惯记账～"
     if kind == "export":

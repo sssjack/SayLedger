@@ -50,39 +50,52 @@ def _execute_memo(db: Session, user_id: int, data: dict[str, Any], action: str,
     from app.auth import now_local
 
     now = now_local()
+    if action in {"memo_query", "memo_update", "memo_cancel"}:
+        from app.memo_control import execute_control
+        return execute_control(db, user_id, data, text, context or {}, now)
     if action == "memo_cancel_pending":
         memo_mod.clear_pending(db, user_id)
         return "好嘞，那条备忘草稿已经取消啦，不会打扰你～", {"kind": "memo"}
     draft = data.get("draft") if isinstance(data.get("draft"), dict) else None
-    anchor = (context or {}).get("stage_anchor")
+    anchor = (context or {}).get("stage_anchor") or (draft or {}).get("anchor")
+    auto_time = memo_mod.allows_auto_time(text)
     if action == "memo_batch" or draft is not None and isinstance(draft.get("batch"), list):
         raw = draft["batch"] if draft is not None else data.get("memos")
         if not isinstance(raw, list) or not 1 <= len(raw) <= 8 or any(not isinstance(entry, dict) for entry in raw):
             raise HTTPException(400, "每份计划支持1到8条提醒，请说明具体步骤和时间。")
         drafts = []
+        template = []
         for entry in raw:
             day = memo_mod.cn_int(str(entry.get("day") or ""))
-            if day and anchor and day < anchor["day"]:
-                continue
             item = dict(entry) if draft is not None else memo_mod.normalize_ai_memo(entry, now, anchor=anchor)
+            if item is None:
+                raise HTTPException(400, "计划步骤不完整，请补充内容。")
+            repeat = memo_mod.parse_repeat(text)
+            if repeat:
+                item.update(repeat)
+            elif isinstance(data.get("repeat"), dict):
+                item.update(data["repeat"])
+            item = memo_mod.prepare_draft(item, now, auto_time=auto_time, text=text)
             item.setdefault("raw_input", text)
+            template.append(item)
+            if day and anchor and day < anchor["day"] and item.get("recurrence", "none") == "none":
+                continue
             drafts.append(item)
         if not drafts:
             return "这份计划的步骤都在当前阶段之前，还没有创建提醒。请说明接下来要提醒的步骤。", {"kind": "clarify"}
-        rows = memo_mod.create_memos(db, user_id, drafts, source=source, now=now)
+        rows = memo_mod.create_memos(db, user_id, drafts, source=source, now=now, template=template, anchor=anchor)
         if not rows:
-            pending = {"batch": drafts}
+            pending = {"batch": template, "anchor": anchor, "raw_input": text}
             memo_mod.save_pending(db, user_id, pending)
             return memo_mod.pending_reply(pending), {"kind": "memo", "missing": ["batch"]}
         memo_mod.clear_pending(db, user_id)
-        lines = [f"📌 已安排{len(rows)}条提醒"]
-        lines.extend(f"{row.next_trigger_at:%m月%d日 %H:%M} · {row.content[:40]}" for row in rows)
-        return "\n".join(lines), {"kind": "memo", "memos": [memo_mod.serialize_memo(row) for row in rows]}
+        from app.memo_control import result_reply
+        return result_reply(rows, f"已安排{len(rows)}条提醒"), {"kind": "memo", "memos": [memo_mod.serialize_memo(row) for row in rows]}
     if draft is None and isinstance(data.get("memo"), dict):
         draft = memo_mod.normalize_ai_memo(data["memo"], now, anchor=anchor)
     if draft is None:
         return "这条备忘我没看明白，可以换个说法再告诉我吗？比如“明天下午3点提醒我开会”。", {"kind": "clarify", "missing": ["memo"]}
-    draft = dict(draft)
+    draft = memo_mod.prepare_draft(draft, now, auto_time=auto_time, text=text)
     draft.setdefault("raw_input", text)
     if source in ("image", "wechat-image"):
         draft.setdefault("source_kind", "image")
@@ -136,9 +149,9 @@ def execute(db: Session, user_id: int, data: dict[str, Any], text: str, today: d
     from app.main import apply_ai_change, create_transactions
     action = str(data.get("action") or "chat")
     if action in {"record", "update", "delete", "undo", "refund", "settle", "budget_set", "budget_delete", "preference_set",
-                  "memo", "memo_create", "memo_pending", "memo_cancel_pending", "memo_batch"}:
+                  "memo", "memo_create", "memo_pending", "memo_cancel_pending", "memo_batch", "memo_update", "memo_cancel"}:
         lock_ledger(db)
-    if action in {"memo", "memo_create", "memo_pending", "memo_cancel_pending", "memo_batch"}:
+    if action in {"memo", "memo_create", "memo_pending", "memo_cancel_pending", "memo_batch", "memo_query", "memo_update", "memo_cancel"}:
         return _execute_memo(db, user_id, data, action, text, source, context)
     payload: dict[str, Any] = {"kind": action}
     if action == "record":
