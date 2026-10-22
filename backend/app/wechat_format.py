@@ -71,24 +71,20 @@ def _icon(row: dict) -> str:
     return CATEGORY_EMOJIS.get(row.get("category"), "🧾")
 
 
-def _row_lines(row: dict, *, compact: bool, shared_date: str = "", show_kind: bool = True,
+def _row_lines(row: dict, *, compact: bool, show_kind: bool = True,
                show_payment: bool = False) -> list[str]:
-    label = _short(row.get("merchant") or row.get("note") or row.get("category") or "流水", 16 if compact else 24)
-    name = (KINDS.get(row.get("kind"), "流水") + " · ") if compact and show_kind else ""
-    first = f"{_icon(row)} {name}{label}  {_money(row['amount'])}"
-    if compact:
-        first += f"  #{row['id']}"
+    label = _short(row.get("merchant") or row.get("note") or row.get("category") or "流水", 24)
     details = []
-    if not compact:
-        details = [_plain(value) for value in [KINDS.get(row.get("kind"), "流水"), row.get("category"), row.get("paymentMethod")] if value]
-        if row.get("date") and row["date"] != shared_date:
-            details.append(_date(row["date"]))
-        details.append(f"#{row['id']}")
-    elif row.get("paymentMethod") and show_payment:
-        details.append(_plain(row["paymentMethod"]))
-    lines = [first]
+    if not compact or show_kind:
+        details.append(KINDS.get(row.get("kind"), "流水"))
+    if row.get("category"):
+        details.append(_plain(row["category"]))
+    amount = "  " + _money(row["amount"])
     if details:
-        lines.append("  " + " · ".join(dict.fromkeys(details)))
+        amount += " · " + " · ".join(dict.fromkeys(details))
+    lines = [f"{_icon(row)} {label}", amount]
+    if row.get("paymentMethod") and (not compact or show_payment):
+        lines.append("  付款：" + _plain(row["paymentMethod"]))
     if row.get("kind") == "expense" and row.get("personalAmount") is not None and row["personalAmount"] != row["amount"]:
         lines.append("  个人承担 " + _money(row["personalAmount"]))
     if row.get("outstandingAmount", 0) > 0:
@@ -108,7 +104,7 @@ def _headline(reply: str, payload: dict) -> str:
     if kind in {"update", "delete"} and payload.get("found") is False:
         return "🔎 还没找到你说的那笔呢～\n" + reply
     if kind == "update":
-        return "✏️ 已修改 · 改好啦"
+        return "✏️ 已修改"
     if kind == "delete":
         return "🧹 " + reply
     if kind == "undo":
@@ -131,8 +127,8 @@ def format_reply(reply: str, payload: dict, *, transcript: str = "") -> str:
     if kind == "query" and "display_total" in stats:
         lines = ["📒 账单小结", "📅 " + _period(period), ""]
         if stats.get("count", 0):
-            lines += [METRIC_LABELS.get(stats.get("metric"), "个人净支出"),
-                      f"{_money(stats['display_total'])}  ·  共{stats['count']}笔"]
+            label = METRIC_LABELS.get(stats.get("metric"), "个人净支出")
+            lines += [f"{label}  {_money(stats['display_total'])}", f"共 {stats['count']} 笔账单"]
         else:
             lines.append("这个范围里还没有账单哦～")
     else:
@@ -140,44 +136,47 @@ def format_reply(reply: str, payload: dict, *, transcript: str = "") -> str:
         if period.get("start") or period.get("end"):
             lines.append("📅 " + _period(period))
     rows = payload.get("transactions") or payload.get("candidates") or payload.get("deleted") or []
-    compact = kind == "query"
+    compact = kind in {"query", "compare", "export"}
     payments = {row.get("paymentMethod") for row in rows[:8]}
     dates = {row.get("date") for row in rows[:8] if row.get("date")}
     shared_date = next(iter(dates)) if len(dates) == 1 else ""
+    single_day = period.get("start") if period.get("start") == period.get("end") else None
     if rows:
-        if not compact and shared_date:
+        if not compact and shared_date and shared_date != single_day:
             lines.append("📅 " + _date(shared_date))
-        lines += ["", "— 明细 —"] if compact else [""]
-    previous_date = period.get("start") if period.get("start") == period.get("end") else None
+        if compact and single_day:
+            lines += ["", "账单明细"]
+    previous_date = single_day if compact else shared_date
     kinds = {row.get("kind") for row in rows[:8]}
     show_kind = len(kinds) != 1 or not kinds.issubset({"expense"})
-    for index, row in enumerate(rows[:8]):
-        if compact and row.get("date") and row["date"] != previous_date:
-            if index:
-                lines.append("")
-            lines.append("📅 " + _date(row["date"]))
+    for row in rows[:8]:
+        lines.append("")
+        if row.get("date") and row["date"] != previous_date:
+            lines += ["📅 " + _date(row["date"]), ""]
             previous_date = row["date"]
-        elif not compact and index:
-            lines.append("")
-        lines.extend(_row_lines(row, compact=compact, shared_date=shared_date, show_kind=show_kind,
+        lines.extend(_row_lines(row, compact=compact, show_kind=show_kind,
                                 show_payment=len(payments) > 1))
     more = len(rows) > 8 or bool(payload.get("truncated"))
     if more:
         count = stats.get("count")
-        hint = f"已展示{min(8, len(rows))}笔 / 共{count}笔" if count is not None else "这里只展示前8笔"
-        lines += ["", "📚 " + hint + "，完整明细见账本"]
+        hint = f"已展示 {min(8, len(rows))} / {count} 笔" if count is not None else "这里只展示前 8 笔"
+        lines += ["", "📚 " + hint, "其余明细可到完整账本查看"]
     if kind == "duplicate":
         lines += ["", "确实是另一笔？", "10分钟内回复「确认重复记账」"]
-    for choice in (payload.get("choices") or [])[:6]:
-        lines.append(f"💬 可回复：{choice['text']}")
-    if payload.get("budgets"):
+    choices = (payload.get("choices") or [])[:6]
+    if choices:
         lines.append("")
+    for choice in choices:
+        lines.append(f"💬 可回复：{choice['text']}")
     for budget in (payload.get("budgets") or [])[:6]:
-        lines += [f"🎯 {_plain(budget.get('label', '预算'))}",
-                  f"  预算 {_money(budget['amount'])} · 剩余 {_money(budget['remaining'])}"]
+        lines += ["", f"🎯 {_plain(budget.get('label', '预算'))}", "  预算 " + _money(budget["amount"])]
+        if budget.get("spent") is not None:
+            lines.append("  已用 " + _money(budget["spent"]))
+        remaining = Decimal(str(budget["remaining"]))
+        lines.append("  " + ("超支 " if remaining < 0 else "剩余 ") + _money(abs(remaining)))
     if payload.get("preference"):
         preference = payload["preference"]
-        lines.append(f"💳 默认付款方式：{preference.get('payment_method') or '未设置'}")
+        lines += ["", f"💳 默认付款方式：{preference.get('payment_method') or '未设置'}"]
         for name, category in list((preference.get("rules") or {}).items())[:5]:
             lines.append(f"{name} → {category}")
     if kind in {"update", "delete"} and payload.get("found") is False:
@@ -185,13 +184,15 @@ def format_reply(reply: str, payload: dict, *, transcript: str = "") -> str:
     if kind in {"record", "update", "delete"} and payload.get("found") is not False:
         lines += ["", "↩️ 可说「撤销上一步」"]
     if transcript:
-        lines += ["", "🎙️ 听到你说：" + _short(transcript, 100)]
+        lines += ["", "🎙️ 听到你说", _short(transcript, 100)]
     # 日常短回复不重复贴长网址，仅帮助、导出和未展示完的明细提供入口。
     help_reply = kind == "chat" and "你的记账搭子" in reply
     need_link = more or kind == "export" or help_reply
-    footer = f"\n\n📖 完整账本\n{settings.public_url}" if settings.public_url and need_link else ""
+    footer = f"\n\n📖 完整账本  \n{settings.public_url}" if settings.public_url and need_link else ""
     # 为链接保留位置；按 UTF-8 字节截断，避免中文使消息超过通道限制。
     text = "\n".join(lines).strip()
+    # 显式硬换行兼容 Markdown 展示，避免标题、日期和明细被合并到同一行。
+    text = "\n".join(line.rstrip() + "  " if line.strip() else "" for line in text.splitlines()).strip()
     budget = max(1000, 3800 - len(footer.encode()))
     if len(text.encode()) > budget:
         text = text.encode()[:budget - 60].decode("utf-8", errors="ignore") + "\n更多明细请到网页查看。"
