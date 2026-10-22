@@ -263,9 +263,28 @@ def continue_pending(text: str, draft: dict[str, Any], now: dt.datetime) -> tupl
     compact = re.sub(r"[\s，。！？!?]", "", text or "")
     if compact in _CANCEL_WORDS or "取消" in compact and len(compact) <= 8:
         return "cancel", draft
+    if (re.search(r"查账|账单|预算|撤销|花了|花多少|多少钱|支出|收入|昨天|上周|上个月", compact)
+            or re.search(r"(?:午饭|晚饭|早餐|咖啡|打车|买了).*\d", compact)) and not _MEMO_HINT.search(text):
+        return "unrelated", draft
+    if isinstance(draft.get("batch"), list):
+        entries = [dict(entry) for entry in draft["batch"]]
+        incomplete = [index for index, entry in enumerate(entries) if entry.get("missing") or _draft_missing(entry)]
+        if len(incomplete) != 1:
+            return "unrelated", draft
+        kind, updated = continue_pending(text, entries[incomplete[0]], now)
+        if kind in {"create", "ask"}:
+            entries[incomplete[0]] = updated
+            return ("create" if kind == "create" else "ask"), {"batch": entries}
+        return kind, draft
     merged = dict(draft)
     reparsed = parse_memo_request(text, now) if _MEMO_HINT.search(text or "") else None
     clock, _ = parse_clock(text)
+    date_value, _, date_desc = parse_date(text, now.date())
+    remainder = _clean_content(text)
+    remainder = re.sub(r"改成|改到|改为|定在|定为|那就|就|好的|可以|左右|点钟|在", "", remainder)
+    temporal_reply = bool(clock or date_value) and not remainder
+    if not reparsed and merged.get("content") and (clock or date_value) and not temporal_reply:
+        return "unrelated", draft
     if reparsed:
         for key in ("content", "trigger_at", "date", "time", "date_desc"):
             if reparsed.get(key):
@@ -275,10 +294,13 @@ def continue_pending(text: str, draft: dict[str, Any], now: dt.datetime) -> tupl
             merged["weekday"] = reparsed.get("weekday")
         if reparsed.get("time_only"):
             merged["time_only"] = True
-    if clock and not merged.get("trigger_at"):
+    if clock:
+        merged["trigger_at"] = None
         merged["time"] = clock.strftime("%H:%M")
         if merged.get("recurrence") == "none" and not merged.get("date"):
             merged["time_only"] = True
+    if date_value and temporal_reply:
+        merged.update(date=date_value.isoformat(), date_desc=date_desc, trigger_at=None)
     if not merged.get("content"):
         content = _clean_content(text)
         if content:
@@ -310,7 +332,14 @@ def date_label(draft: dict[str, Any]) -> str:
 
 
 def pending_reply(draft: dict[str, Any]) -> str:
+    if isinstance(draft.get("batch"), list):
+        incomplete = [entry for entry in draft["batch"] if entry.get("missing") or _draft_missing(entry)]
+        if len(incomplete) == 1:
+            return "这份计划还没有创建提醒。\n" + pending_reply(incomplete[0])
+        return "这份计划有几处内容或时间还不清楚，还没有创建提醒。请补充对应的步骤和具体提醒时间。"
     missing = draft.get("missing") or _draft_missing(draft)
+    if "future_time" in missing:
+        return f"「{draft.get('content') or '这件事'}」的时间已经过去，还没有创建提醒。要改到哪一天、几点呢？"
     if "time" in missing:
         return f"好嘞，先把这件事记在小本本上：{date_label(draft)}提醒你{draft.get('content') or '这件事'}。想让我在{date_label(draft)}几点喊你呢？"
     if "content" in missing:
@@ -351,8 +380,6 @@ def get_pending(db: Session, user_id: int) -> dict[str, Any] | None:
     if row is None:
         return None
     if row.expires_at <= utcnow():
-        db.delete(row)
-        db.flush()
         return None
     try:
         return json.loads(row.draft_json or "{}")
@@ -382,6 +409,9 @@ def create_memo(db: Session, user_id: int, draft: dict[str, Any], *, source: str
     trigger = build_trigger(draft, now)
     if trigger is None or not draft.get("content"):
         return None
+    if trigger <= now:
+        draft["missing"] = ["future_time"]
+        return None
     memo = Memo(user_id=user_id, content=str(draft["content"])[:512], next_trigger_at=trigger,
                 recurrence=draft.get("recurrence") or "none",
                 weekday=draft.get("weekday") if draft.get("recurrence") == "weekly" else None,
@@ -393,7 +423,7 @@ def create_memo(db: Session, user_id: int, draft: dict[str, Any], *, source: str
     return memo
 
 
-def normalize_ai_memo(raw: Any, now: dt.datetime) -> dict[str, Any] | None:
+def normalize_ai_memo(raw: Any, now: dt.datetime, *, anchor: dict | None = None) -> dict[str, Any] | None:
     """把模型的 memo 意图收敛成与解析器相同的草稿结构；无效返回 None。"""
     if not isinstance(raw, dict):
         return None
@@ -426,12 +456,47 @@ def normalize_ai_memo(raw: Any, now: dt.datetime) -> dict[str, Any] | None:
                      time=trigger.strftime("%H:%M"))
         if recurrence == "weekly" and weekday is None:
             draft["weekday"] = trigger.weekday()
+    if trigger is None:
+        date_raw = str(raw.get("date") or "")
+        try:
+            draft["date"] = dt.date.fromisoformat(date_raw).isoformat()
+        except ValueError:
+            pass
+        time_raw = str(raw.get("time") or "").strip()
+        clock, matched = parse_clock(time_raw)
+        if clock and matched.strip() == time_raw:
+            draft["time"] = clock.strftime("%H:%M")
+    day = cn_int(str(raw.get("day") or ""))
+    if day and 1 <= day <= 60 and anchor:
+        draft["trigger_at"] = None
+        draft["date"] = (dt.date.fromisoformat(anchor["date"]) + dt.timedelta(days=day - anchor["day"])).isoformat()
+        draft["date_desc"] = f"计划第{day}天"
     if draft["recurrence"] == "weekly" and draft["weekday"] is not None:
         draft["date_desc"] = "每" + WEEKDAY_NAMES[draft["weekday"]]
     elif draft["recurrence"] == "daily":
         draft["date_desc"] = "每天"
     draft["missing"] = _draft_missing(draft)
     return draft
+
+
+def create_memos(db: Session, user_id: int, drafts: list[dict], *, source: str, now: dt.datetime) -> list[Memo]:
+    """先验证整份计划，再一次性新增；缺信息时不安排部分步骤。"""
+    rows = []
+    for draft in drafts:
+        trigger = build_trigger(draft, now)
+        if trigger is None or not draft.get("content"):
+            continue
+        if trigger <= now:
+            draft["missing"] = ["future_time"]
+            continue
+        rows.append(Memo(user_id=user_id, content=draft["content"][:512], next_trigger_at=trigger,
+                         recurrence=draft.get("recurrence") or "none", weekday=draft.get("weekday"),
+                         status="active", source=source, raw_input=str(draft.get("raw_input") or "")[:2000]))
+    if len(rows) != len(drafts):
+        return []
+    db.add_all(rows)
+    db.flush()
+    return rows
 
 
 # ---------------------------------------------------------------- 序列化与提醒文案

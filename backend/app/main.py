@@ -296,7 +296,8 @@ def create_transactions(
 
 def build_user_content(text: str, image_paths: list[str]) -> list[dict[str, Any]]:
     parts: list[dict[str, Any]] = []
-    instruction = text.strip() or "看看这张图，帮我记账。"
+    instruction = text.strip() or ("请识别图片内容，结合对话判断是账单、计划、提醒还是其他内容。"
+                                  "小票或已付款凭证可以记账；操作说明和计划图不能当成已经发生的支出。")
     parts.append({"type": "text", "text": instruction})
     for index, path in enumerate(image_paths, start=1):
         parts.append({"type": "text", "text": f"第{index}张图片："})

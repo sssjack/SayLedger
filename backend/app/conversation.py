@@ -44,7 +44,7 @@ def local_intent(text: str, today: dt.date) -> dict[str, Any] | None:
 
 
 def _execute_memo(db: Session, user_id: int, data: dict[str, Any], action: str,
-                  text: str, source: str) -> tuple[str, dict[str, Any]]:
+                  text: str, source: str, context: dict | None = None) -> tuple[str, dict[str, Any]]:
     """备忘动作：草稿齐了就建 Memo；缺时刻/事件先存草稿追问，下一句补齐。"""
     from app import memo as memo_mod
     from app.auth import now_local
@@ -54,8 +54,32 @@ def _execute_memo(db: Session, user_id: int, data: dict[str, Any], action: str,
         memo_mod.clear_pending(db, user_id)
         return "好嘞，那条备忘草稿已经取消啦，不会打扰你～", {"kind": "memo"}
     draft = data.get("draft") if isinstance(data.get("draft"), dict) else None
+    anchor = (context or {}).get("stage_anchor")
+    if action == "memo_batch" or draft is not None and isinstance(draft.get("batch"), list):
+        raw = draft["batch"] if draft is not None else data.get("memos")
+        if not isinstance(raw, list) or not 1 <= len(raw) <= 8 or any(not isinstance(entry, dict) for entry in raw):
+            raise HTTPException(400, "每份计划支持1到8条提醒，请说明具体步骤和时间。")
+        drafts = []
+        for entry in raw:
+            day = memo_mod.cn_int(str(entry.get("day") or ""))
+            if day and anchor and day < anchor["day"]:
+                continue
+            item = dict(entry) if draft is not None else memo_mod.normalize_ai_memo(entry, now, anchor=anchor)
+            item.setdefault("raw_input", text)
+            drafts.append(item)
+        if not drafts:
+            return "这份计划的步骤都在当前阶段之前，还没有创建提醒。请说明接下来要提醒的步骤。", {"kind": "clarify"}
+        rows = memo_mod.create_memos(db, user_id, drafts, source=source, now=now)
+        if not rows:
+            pending = {"batch": drafts}
+            memo_mod.save_pending(db, user_id, pending)
+            return memo_mod.pending_reply(pending), {"kind": "memo", "missing": ["batch"]}
+        memo_mod.clear_pending(db, user_id)
+        lines = [f"📌 已安排{len(rows)}条提醒"]
+        lines.extend(f"{row.next_trigger_at:%m月%d日 %H:%M} · {row.content[:40]}" for row in rows)
+        return "\n".join(lines), {"kind": "memo", "memos": [memo_mod.serialize_memo(row) for row in rows]}
     if draft is None and isinstance(data.get("memo"), dict):
-        draft = memo_mod.normalize_ai_memo(data["memo"], now)
+        draft = memo_mod.normalize_ai_memo(data["memo"], now, anchor=anchor)
     if draft is None:
         return "这条备忘我没看明白，可以换个说法再告诉我吗？比如“明天下午3点提醒我开会”。", {"kind": "clarify", "missing": ["memo"]}
     draft = dict(draft)
@@ -68,7 +92,7 @@ def _execute_memo(db: Session, user_id: int, data: dict[str, Any], action: str,
         row = memo_mod.create_memo(db, user_id, draft, source="image" if draft.get("source_kind") == "image" else source, now=now)
         if row is None:
             memo_mod.save_pending(db, user_id, draft)
-            return memo_mod.pending_reply(draft), {"kind": "memo", "missing": missing}
+            return memo_mod.pending_reply(draft), {"kind": "memo", "missing": draft.get("missing") or missing}
         memo_mod.clear_pending(db, user_id)
         return memo_mod.created_reply(row), {"kind": "memo", "memo": memo_mod.serialize_memo(row),
                                              "memos": [memo_mod.serialize_memo(row)]}
@@ -108,14 +132,14 @@ def query_conditions(data: dict[str, Any], text: str, today: dt.date) -> dict[st
 
 
 def execute(db: Session, user_id: int, data: dict[str, Any], text: str, today: dt.date,
-            image_path: str, source: str, confirm_duplicate: bool) -> tuple[str, dict[str, Any]]:
+            image_path: str, source: str, confirm_duplicate: bool, *, context: dict | None = None) -> tuple[str, dict[str, Any]]:
     from app.main import apply_ai_change, create_transactions
     action = str(data.get("action") or "chat")
     if action in {"record", "update", "delete", "undo", "refund", "settle", "budget_set", "budget_delete", "preference_set",
-                  "memo", "memo_create", "memo_pending", "memo_cancel_pending"}:
+                  "memo", "memo_create", "memo_pending", "memo_cancel_pending", "memo_batch"}:
         lock_ledger(db)
-    if action in {"memo", "memo_create", "memo_pending", "memo_cancel_pending"}:
-        return _execute_memo(db, user_id, data, action, text, source)
+    if action in {"memo", "memo_create", "memo_pending", "memo_cancel_pending", "memo_batch"}:
+        return _execute_memo(db, user_id, data, action, text, source, context)
     payload: dict[str, Any] = {"kind": action}
     if action == "record":
         items = data.get("transactions") or []
