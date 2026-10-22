@@ -48,6 +48,7 @@ def _execute_memo(db: Session, user_id: int, data: dict[str, Any], action: str,
     """备忘动作：草稿齐了就建 Memo；缺时刻/事件先存草稿追问，下一句补齐。"""
     from app import memo as memo_mod
     from app.auth import now_local
+    from app.memo_clauses import global_repeat, is_compound, stage_repeats
 
     now = now_local()
     if action in {"memo_query", "memo_update", "memo_cancel"}:
@@ -59,6 +60,8 @@ def _execute_memo(db: Session, user_id: int, data: dict[str, Any], action: str,
     draft = data.get("draft") if isinstance(data.get("draft"), dict) else None
     anchor = (context or {}).get("stage_anchor") or (draft or {}).get("anchor")
     auto_time = memo_mod.allows_auto_time(text)
+    native_repeat = global_repeat(text) if is_compound(text) else memo_mod.parse_repeat(text)
+    scoped_repeats = stage_repeats(text)
     if action == "memo_batch" or draft is not None and isinstance(draft.get("batch"), list):
         raw = draft["batch"] if draft is not None else data.get("memos")
         if not isinstance(raw, list) or not 1 <= len(raw) <= 8 or any(not isinstance(entry, dict) for entry in raw):
@@ -70,12 +73,12 @@ def _execute_memo(db: Session, user_id: int, data: dict[str, Any], action: str,
             item = dict(entry) if draft is not None else memo_mod.normalize_ai_memo(entry, now, anchor=anchor)
             if item is None:
                 raise HTTPException(400, "计划步骤不完整，请补充内容。")
-            repeat = memo_mod.parse_repeat(text)
+            repeat = scoped_repeats.get(day) or native_repeat
             if repeat:
                 item.update(repeat)
-            elif isinstance(data.get("repeat"), dict):
+            elif isinstance(data.get("repeat"), dict) and "recurrence" not in entry:
                 item.update(data["repeat"])
-            item = memo_mod.prepare_draft(item, now, auto_time=auto_time, text=text)
+            item = memo_mod.prepare_draft(item, now, auto_time=auto_time, text=text, inherit_repeat=False)
             item.setdefault("raw_input", text)
             template.append(item)
             if day and anchor and day < anchor["day"] and item.get("recurrence", "none") == "none":
@@ -95,7 +98,9 @@ def _execute_memo(db: Session, user_id: int, data: dict[str, Any], action: str,
         draft = memo_mod.normalize_ai_memo(data["memo"], now, anchor=anchor)
     if draft is None:
         return "这条备忘我没看明白，可以换个说法再告诉我吗？比如“明天下午3点提醒我开会”。", {"kind": "clarify", "missing": ["memo"]}
-    draft = memo_mod.prepare_draft(draft, now, auto_time=auto_time, text=text)
+    if native_repeat:
+        draft = {**draft, **native_repeat}
+    draft = memo_mod.prepare_draft(draft, now, auto_time=auto_time, text=text, inherit_repeat=False)
     draft.setdefault("raw_input", text)
     if source in ("image", "wechat-image"):
         draft.setdefault("source_kind", "image")

@@ -97,12 +97,45 @@ def result_reply(rows: list[Memo], title: str) -> str:
     return "\n".join(lines)
 
 
+def _update_specs(data: dict) -> tuple[dict, dict[int, dict]]:
+    common = data.get("changes") or {}
+    edits = data.get("updates") or []
+    if not isinstance(common, dict) or not isinstance(edits, list) or len(edits) > 8:
+        raise HTTPException(400, "每次最多支持8组步骤调整，请说明具体设置。")
+    overrides = {}
+    for edit in edits:
+        if not isinstance(edit, dict) or not isinstance(edit.get("changes"), dict) or not edit["changes"]:
+            raise HTTPException(400, "有一项调整缺少具体设置，整份计划还没有修改。")
+        ids = edit.get("memo_ids")
+        if not isinstance(ids, list) or not ids or any(type(value) is not int for value in ids):
+            raise HTTPException(400, "有一项调整没有明确对应提醒，整份计划还没有修改。")
+        for memo_id in ids:
+            current = overrides.setdefault(memo_id, {})
+            if any(key in current and current[key] != value for key, value in edit["changes"].items()):
+                raise HTTPException(400, "同一步骤出现了冲突设置，整份计划还没有修改，请确认最终规则。")
+            current.update(edit["changes"])
+    if not common and not overrides:
+        raise HTTPException(400, "请说明要改时间、内容还是循环规则。")
+    allowed = {"recurrence", "interval_days", "time", "trigger_at", "content", "status"}
+    if any(set(change) - allowed for change in [common, *overrides.values()]):
+        raise HTTPException(400, "这次修改包含暂不支持的设置，整份计划还没有修改。请说明时间、内容或循环天数。")
+    if any("status" in change and change["status"] != "cancelled" for change in [common, *overrides.values()]):
+        raise HTTPException(400, "已结束的步骤不能在修改中重新启用，请明确创建新提醒。")
+    return dict(common), overrides
+
+
 def execute_control(db, user_id: int, data: dict, text: str, context: dict, now: dt.datetime) -> tuple[str, dict]:
     action = data["action"]
+    common, overrides = _update_specs(data) if action == "memo_update" else ({}, {})
+    target_data = dict(data)
+    if overrides and not common and not data.get("memo_ids"):
+        target_data["memo_ids"] = list(overrides)
     # “所有”必须来自用户，模型不能自行扩大修改范围。
     if action != "memo_query" and data.get("scope") == "all" and not re.search(r"所有|全部", text):
         raise HTTPException(400, "请说明要修改哪件事，或明确说‘所有提醒’。")
-    rows = _targets(db, user_id, data, context, query=action == "memo_query")
+    rows = _targets(db, user_id, target_data, context, query=action == "memo_query")
+    if set(overrides) - {row.id for row in rows}:
+        raise HTTPException(400, "有一项调整不属于当前选定的提醒，整份计划还没有修改。")
     if not rows:
         return "📭 没有找到对应的已保存提醒。还在商量中的计划需要补齐信息后才会生效。", {"kind": "memo_query", "memos": []}
     if action == "memo_query":
@@ -122,22 +155,22 @@ def execute_control(db, user_id: int, data: dict, text: str, context: dict, now:
         db.expire_all()
         rules.clear_pending(db, user_id)
         return f"🌿 已取消{len(changes)}条提醒，这份安排不会再打扰你啦。", {"kind": "memo", "memos": [rules.serialize_memo(row) for row in rows]}
-    changes = data.get("changes")
-    if not isinstance(changes, dict) or not changes:
-        raise HTTPException(400, "请说明要改时间、内容还是循环规则。")
-    changes = dict(changes)
-    repeat = rules.parse_repeat(text)
+    from app.memo_clauses import global_repeat, is_compound
+    repeat = global_repeat(text) if is_compound(text) else rules.parse_repeat(text)
     if repeat:
-        changes.update(repeat)
-    unsupported = set(changes) - {"recurrence", "interval_days", "time", "trigger_at", "content"}
-    if unsupported:
-        raise HTTPException(400, "这次修改包含暂不支持的设置，还没有保存。请分别说明时间、内容或每隔几天重复。")
-    if "content" in changes and len(rows) != 1:
+        common.update(repeat)
+    if "content" in common and len(rows) != 1:
         raise HTTPException(400, "要修改哪一步的内容呢？请说明对应步骤。")
     updates, additions = [], []
     # 先准备全部变更，不在循环里执行数据库写入。
     for row in rows:
         if row.status == "cancelled":
+            continue
+        changes = {**common, **overrides.get(row.id, {})}
+        if not changes:
+            continue
+        if changes.get("status") == "cancelled":
+            updates.append({"id": row.id, "status": "cancelled", "updated_at": utcnow()})
             continue
         draft = {"content": changes.get("content", row.content),
                  "trigger_at": changes.get("trigger_at", row.next_trigger_at.isoformat(timespec="minutes")),
@@ -154,7 +187,7 @@ def execute_control(db, user_id: int, data: dict, text: str, context: dict, now:
             if not clock or matched.strip() != str(changes["time"]).strip():
                 raise HTTPException(400, "请提供明确的提醒时刻，例如17:25。")
             draft.update(time=clock.strftime("%H:%M"), trigger_at=None)
-        draft = rules.prepare_draft(draft, now, auto_time=rules.allows_auto_time(text), text=text)
+        draft = rules.prepare_draft(draft, now, auto_time=rules.allows_auto_time(text), text=text, inherit_repeat=False)
         # 修改循环时保留原来的时间；授权自动选择只用于尚未选定的时间。
         if "time" not in changes and "trigger_at" not in changes:
             draft.update(time=row.next_trigger_at.strftime("%H:%M"), trigger_at=row.next_trigger_at.isoformat(timespec="minutes"), missing=[])
@@ -177,7 +210,7 @@ def execute_control(db, user_id: int, data: dict, text: str, context: dict, now:
         group = [row for row in all_plan_rows if row.plan_id == plan_id]
         if not all(row.id in {item.id for item in rows} for row in group if row.status == "active"):
             continue
-        sample = next((row for row in rows if row.plan_id == plan_id and row.id in {item["id"] for item in updates}), None)
+        sample = next((row for row in rows if row.plan_id == plan_id and row.id in {item["id"] for item in updates if "recurrence" in item}), None)
         if sample is None:
             continue
         changed = next(item for item in updates if item["id"] == sample.id)
@@ -188,7 +221,7 @@ def execute_control(db, user_id: int, data: dict, text: str, context: dict, now:
             if not step.get("day") or any(row.stage_day == step["day"] for row in group):
                 continue
             draft = rules.prepare_draft({**step, "recurrence": changed["recurrence"], "interval_days": changed["interval_days"]},
-                                         now, auto_time=rules.allows_auto_time(text), text=text)
+                                         now, auto_time=rules.allows_auto_time(text), text=text, inherit_repeat=False)
             trigger = rules.build_trigger(draft, now)
             if draft.get("missing") or trigger is None:
                 raise HTTPException(400, "循环计划还有缺失的步骤时间，还没有修改，请补充或让我选择时间。")
@@ -202,4 +235,5 @@ def execute_control(db, user_id: int, data: dict, text: str, context: dict, now:
     db.expire_all()
     rules.clear_pending(db, user_id)
     changed_rows = [row for row in rows if row.id in {item["id"] for item in updates}] + additions
-    return result_reply(changed_rows, "提醒计划已更新"), {"kind": "memo", "memos": [rules.serialize_memo(row) for row in changed_rows]}
+    report_rows = list({row.id: row for row in [*changed_rows, *all_plan_rows]}.values()) if data.get("report_all") else changed_rows
+    return result_reply(report_rows, "提醒计划已更新"), {"kind": "memo", "memos": [rules.serialize_memo(row) for row in report_rows]}

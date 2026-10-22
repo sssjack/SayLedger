@@ -155,8 +155,7 @@ def allows_auto_time(text: str) -> bool:
 
 
 def parse_repeat(text: str) -> dict | None:
-    targets = re.split(r"改成|改为|调整为|换成", text)
-    text = targets[-1]
+    # 后面的“改成”可能是在改时间，不能截掉前面已经表达的循环要求。
     candidates = []
     for match in re.finditer(r"不再循环|不要循环|不重复|取消循环|取消重复|只提醒一次", text):
         candidates.append((match.start(), {"recurrence": "none", "interval_days": 0}))
@@ -552,10 +551,15 @@ def normalize_ai_memo(raw: Any, now: dt.datetime, *, anchor: dict | None = None)
     return draft
 
 
-def prepare_draft(draft: dict, now: dt.datetime, *, auto_time: bool, text: str) -> dict:
+def prepare_draft(draft: dict, now: dt.datetime, *, auto_time: bool, text: str,
+                  inherit_repeat: bool = True) -> dict:
     """保留时间边界；只有用户授权时才选择默认时间。"""
     draft = dict(draft)
-    repeat = parse_repeat(text)
+    if inherit_repeat:
+        from app.memo_clauses import global_repeat, is_compound
+        repeat = global_repeat(text) if is_compound(text) else parse_repeat(text)
+    else:
+        repeat = None
     if repeat:
         draft.update(repeat)
     recurrence, days = repetition(draft)

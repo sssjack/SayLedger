@@ -63,14 +63,18 @@ def load_context(db, user_id: int, text: str, *, channel: str, exclude_current: 
     unresolved = bool(last_payload.get("kind") in {"clarify", "memo"}
                       and (last_payload.get("missing") or last_payload.get("kind") == "clarify"))
     reference = needs_context(text) or bool(re.search(r"你看着办|你来定|你安排|循环|重复|这组|改成|改为", text)) or bool(pending)
+    new_reminder = bool(re.search(r"新建|新增|新加|再加", text) and re.search(r"提醒|备忘|闹钟", text)
+                        and not needs_context(text) and not re.search(r"图|计划", text))
     independent = bool(re.search(r"查账|账单|预算|花了多少|花多少|花费多少|收入多少", text)
                        or (re.search(r"午饭|晚饭|早餐|咖啡|打车|买了", text) and re.search(r"\d", text)))
-    result.followup = needs_context(text) or ((reference or unresolved and len(text) <= 100) and not independent)
+    result.followup = not new_reminder and (needs_context(text) or ((reference or unresolved and len(text) <= 100) and not independent))
     last_action = {key: last_payload[key] for key in ("kind", "missing", "query", "range", "memo", "memos")
                    if key in last_payload}
     if last_payload.get("transactions"):
         last_action["transaction_ids"] = [row["id"] for row in last_payload["transactions"] if "id" in row]
     result.state = {"last_action": last_action, "pending_memo": pending}
+    if new_reminder:
+        result.state["independent_reminder"] = True
     for row in rows:
         if row.role != "assistant":
             continue
