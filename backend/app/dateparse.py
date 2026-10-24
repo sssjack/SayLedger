@@ -151,6 +151,52 @@ def _single_day(text: str, today: dt.date) -> dt.date | None:
     return None
 
 
+# 多日提及的扫描：按出现顺序找每一段单日说法，再由 _single_day 换算。
+# 大前天必须排在前天前面，否则会被切成“大”+“前天”。
+_DAY_MENTION_RE = re.compile(
+    r"\d{4}[-/年]\d{1,2}[-/月]\d{1,2}[日号]?"
+    r"|(?:上上个月|上个?月|这个月|本月)\s*\d{1,2}\s*[日号]"
+    r"|(?<!\d)\d{1,2}月\d{1,2}[日号]"
+    r"|(?:上|这|本)(?:个)?(?:星期|周)[一二三四五六日天1-7]"
+    r"|大前天|前天|昨天|昨日|昨晚|今天|今日|今晚|今早|明天|明早|明晚|后天"
+    r"|[0-9一二两三四五六七八九十]+\s*天前"
+)
+# 两个单日说法之间只允许连接词/标点，才算“合起来查”；中间夹了别的
+# 实义内容（例如“昨天记的账今天改一下”）不合并，避免把改账误读成查两天。
+_CONNECTOR_GAPS = {"", "和", "与", "以及", "及", "到", "至", "加", "加上", "再加上", "并", "还有"}
+
+
+def _is_connector_gap(gap: str) -> bool:
+    cleaned = re.sub(r"[\s、，,。；;\-~+]", "", gap)
+    return cleaned in _CONNECTOR_GAPS
+
+
+def _multi_day_range(text: str, today: dt.date) -> tuple[dt.date | None, dt.date | None] | None:
+    """“昨天和今天”“前天到今天”“昨天、今天”这类多日说法返回 [最早, 最晚]。
+
+    只合并由连接词直接连起来的连续一段；单日说法、整周/整月区间不受影响。
+    """
+    mentions: list[tuple[int, int, dt.date]] = []
+    for match in _DAY_MENTION_RE.finditer(text):
+        day = _single_day(match.group(0), today)
+        if day is not None:
+            mentions.append((match.start(), match.end(), day))
+    if len({day for _, _, day in mentions}) < 2:
+        return None
+    # 按连接词切段，取第一段含 2 个及以上不同日期的段。
+    segment = [mentions[0][2]]
+    for (prev_start, prev_end, _), (start, end, day) in zip(mentions, mentions[1:]):
+        if _is_connector_gap(text[prev_end:start]):
+            segment.append(day)
+        else:
+            if len(set(segment)) >= 2:
+                return min(segment), max(segment)
+            segment = [day]
+    if len(set(segment)) >= 2:
+        return min(segment), max(segment)
+    return None
+
+
 def resolve_range(text: str, today: dt.date) -> tuple[dt.date | None, dt.date | None]:
     """把"上个月""今年""昨天""最近一周"等区间表达解析成 [start, end]，用于查询和报告。"""
     if not text:
@@ -193,6 +239,12 @@ def resolve_range(text: str, today: dt.date) -> tuple[dt.date | None, dt.date | 
                     start = (start - DAY).replace(day=1)
                 return start, today
             return today - (num - 1) * DAY, today
+
+    # 多日说法（昨天和今天 / 前天到今天）必须早于单日判断，否则 _single_day
+    # 只取第一个词（昨天），把“两天合计”误算成一天——这正是截图里的 bug。
+    multi = _multi_day_range(text, today)
+    if multi:
+        return multi
 
     # 单日说法（昨天 / 上周五 / 上个月3号）必须早于整周、整月区间判断
     day = _single_day(text, today)

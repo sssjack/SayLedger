@@ -144,7 +144,8 @@ def format_reply(reply: str, payload: dict, *, transcript: str = "") -> str:
     if rows:
         if not compact and shared_date and shared_date != single_day:
             lines.append("📅 " + _date(shared_date))
-        if compact and single_day:
+        if compact:
+            # 多日查询也不应丢掉“账单明细”标题；日期分组由下面的行循环按天插入。
             lines += ["", "账单明细"]
     previous_date = single_day if compact else shared_date
     kinds = {row.get("kind") for row in rows[:8]}
