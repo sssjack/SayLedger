@@ -136,6 +136,7 @@ export function MessageBubble({ message, categories, payments, onUpdate, onDelet
             range={payload.range}
             truncated={payload.truncated ?? 0}
             relaxed={payload.relaxed}
+            sortBy={typeof payload.query?.sort_by === 'string' ? payload.query.sort_by : undefined}
             renderCards={renderCards}
           />
         )}
@@ -150,10 +151,14 @@ type QueryResultProps = {
   range?: { start?: string | null; end?: string | null }
   truncated: number
   relaxed?: boolean
+  sortBy?: string
   renderCards: (list: Transaction[]) => JSX.Element
 }
 
-function QueryResult({ stats, transactions, range, truncated, relaxed, renderCards }: QueryResultProps) {
+function QueryResult({ stats, transactions, range, truncated, relaxed, sortBy, renderCards }: QueryResultProps) {
+  // 按金额排序时不能再按日期分组，否则跨天的金额顺序会被分组打散；
+  // 直接按服务端排好的顺序平铺，每张卡片本身带日期。
+  const isAmountSorted = sortBy === 'amount_desc' || sortBy === 'amount_asc'
   const [open, setOpen] = useState(true)
   const total = stats.display_total ?? stats.total
   const top = stats.by_category.filter(item => item.value > 0).slice(0, 6)
@@ -282,15 +287,24 @@ function QueryResult({ stats, transactions, range, truncated, relaxed, renderCar
 
           {open && (
             <div className="space-y-3 border-t border-ink-50 bg-ink-50/30 px-3 py-3">
-              {groups.map((group) => (
-                <div key={group.date} className="space-y-1.5">
-                  <div className="flex items-baseline justify-between px-0.5">
-                    <span className="text-[11.5px] font-medium text-ink-500">{fmtDateLabel(group.date)}</span>
-                    <span className="font-num text-[11px] tabular-nums text-ink-400">¥{fmtMoney(group.total)}</span>
+              {isAmountSorted ? (
+                <>
+                  <div className="px-0.5 text-[11.5px] font-medium text-ink-500">
+                    {sortBy === 'amount_desc' ? '按金额从大到小排列' : '按金额从小到大排列'}
                   </div>
-                  {renderCards(group.items)}
-                </div>
-              ))}
+                  {renderCards(transactions)}
+                </>
+              ) : (
+                groups.map((group) => (
+                  <div key={group.date} className="space-y-1.5">
+                    <div className="flex items-baseline justify-between px-0.5">
+                      <span className="text-[11.5px] font-medium text-ink-500">{fmtDateLabel(group.date)}</span>
+                      <span className="font-num text-[11px] tabular-nums text-ink-400">¥{fmtMoney(group.total)}</span>
+                    </div>
+                    {renderCards(group.items)}
+                  </div>
+                ))
+              )}
               {truncated > 0 && (
                 <div className="text-center text-[11px] text-ink-400">
                   还有 {truncated} 笔没列出，去账单页看全部

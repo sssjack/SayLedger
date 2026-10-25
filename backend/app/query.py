@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import re
 from collections import defaultdict
 from decimal import Decimal
 from typing import Any
@@ -102,6 +103,52 @@ def load_transactions(db: Session, user_id: int, query: dict[str, Any] | None) -
             or needle in (row.payment_method or "").lower()
             or needle in (row.items_json or "").lower()
         ]
+    return sort_transactions(rows, query)
+
+
+SORT_BY_VALUES = {"amount_desc", "amount_asc", "date_desc", "date_asc"}
+
+
+def parse_sort_order(text: str) -> str | None:
+    """从用户原话里抠排序要求，模型漏写时服务端也能兜底。
+
+    “按从大到小排列”这类说法以前没有任何字段承载，查询永远按日期倒序
+    返回，排序要求被静默丢掉——这正是截图里第三条查询的 bug。
+    """
+    if not text:
+        return None
+    if re.search(r"从大到小|由大到小|从高到低|降序|金额最大|最大的在前", text):
+        return "amount_desc"
+    if re.search(r"从小到大|由小到大|从低到高|升序|金额最小|最小的在前", text):
+        return "amount_asc"
+    if re.search(r"按时间.*(?:从早到晚|正序)|最早.*在前|按日期.*升序", text):
+        return "date_asc"
+    if re.search(r"按(?:金额|花销|支出).*(?:排序|排列|排)", text):
+        # 只说“按金额排序”没给方向时，查账默认看大的在前。
+        return "amount_desc"
+    return None
+
+
+def _sort_value(row: Transaction, query: dict[str, Any] | None) -> Decimal:
+    metric = (query or {}).get("metric", "expense")
+    if metric == "income":
+        return row.amount if row.kind == "income" else Decimal("0")
+    if metric == "outstanding":
+        return getattr(row, "_pending", Decimal("0"))
+    if metric == "flow":
+        return row.amount
+    return expense_value(row)
+
+
+def sort_transactions(rows: list[Transaction], query: dict[str, Any] | None) -> list[Transaction]:
+    """按 query.sort_by 重排；没要求时保持原有日期倒序，不动其它调用方。"""
+    sort_by = (query or {}).get("sort_by")
+    if sort_by == "amount_desc":
+        return sorted(rows, key=lambda r: _sort_value(r, query), reverse=True)
+    if sort_by == "amount_asc":
+        return sorted(rows, key=lambda r: _sort_value(r, query))
+    if sort_by == "date_asc":
+        return sorted(rows, key=lambda r: (r.occurred_at, r.id))
     return rows
 
 

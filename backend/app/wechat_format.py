@@ -141,11 +141,17 @@ def format_reply(reply: str, payload: dict, *, transcript: str = "") -> str:
     dates = {row.get("date") for row in rows[:8] if row.get("date")}
     shared_date = next(iter(dates)) if len(dates) == 1 else ""
     single_day = period.get("start") if period.get("start") == period.get("end") else None
+    sort_by = (payload.get("query") or {}).get("sort_by") or payload.get("sort_by")
     if rows:
         if not compact and shared_date and shared_date != single_day:
             lines.append("📅 " + _date(shared_date))
         if compact:
             # 多日查询也不应丢掉“账单明细”标题；日期分组由下面的行循环按天插入。
+            # 按金额排序时先说明顺序：微信文本只展示前 8 笔，也就是金额最大的 8 笔。
+            if sort_by == "amount_desc":
+                lines += ["", "↕ 按金额从大到小排列"]
+            elif sort_by == "amount_asc":
+                lines += ["", "↕ 按金额从小到大排列"]
             lines += ["", "账单明细"]
     previous_date = single_day if compact else shared_date
     kinds = {row.get("kind") for row in rows[:8]}

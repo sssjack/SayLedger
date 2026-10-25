@@ -140,10 +140,18 @@ def resolve_related(db: Session, user_id: int, data: dict[str, Any], action: str
 
 def query_conditions(data: dict[str, Any], text: str, today: dt.date) -> dict[str, Any]:
     from app.dateparse import resolve_range
+    from app.query import SORT_BY_VALUES, parse_sort_order
     query = dict(data.get("query") or {})
     start, end = resolve_range(text, today)
     if start and end:
         query.update(start=start.isoformat(), end=end.isoformat())
+    # 排序和日期一样：原话里的要求由服务端确定性提取，模型漏写也不丢；
+    # 模型已给且合法的保留，非法值清掉，避免把脏字段带进查询。
+    detected = parse_sort_order(text)
+    if detected:
+        query["sort_by"] = detected
+    elif query.get("sort_by") not in SORT_BY_VALUES:
+        query.pop("sort_by", None)
     kinds = query.get("kinds") or []
     if query.get("pending"):
         query["metric"] = "outstanding"

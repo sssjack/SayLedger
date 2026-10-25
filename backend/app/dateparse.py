@@ -197,6 +197,43 @@ def _multi_day_range(text: str, today: dt.date) -> tuple[dt.date | None, dt.date
     return None
 
 
+def _period_start(text: str, today: dt.date) -> dt.date | None:
+    """整段时期的起点：上个月/本周/今年这类没有具体到日的说法。"""
+    if "上上个月" in text:
+        first = today.replace(day=1)
+        prev = (first - DAY).replace(day=1)
+        return (prev - DAY).replace(day=1)
+    if "上个月" in text or "上月" in text:
+        return (today.replace(day=1) - DAY).replace(day=1)
+    if "这个月" in text or "本月" in text:
+        return today.replace(day=1)
+    monday = today - dt.timedelta(days=today.weekday())
+    if "上周" in text or "上个星期" in text or "上星期" in text:
+        return monday - 7 * DAY
+    if "本周" in text or "这周" in text or "这个星期" in text or "本星期" in text:
+        return monday
+    if "今年" in text:
+        return today.replace(month=1, day=1)
+    if "去年" in text:
+        return today.replace(year=today.year - 1, month=1, day=1)
+    return None
+
+
+def _to_now_range(text: str, today: dt.date) -> tuple[dt.date | None, dt.date | None] | None:
+    """“从上周五到现在”“从上个月到现在”返回 [起点, 今天]。
+
+    这类说法里“现在”是区间的终点，不是装饰词。旧逻辑先走 _single_day
+    （上周五）或整月区间（上个月整月），把“到现在”丢掉，只查了起点那一天
+    或起点那个月——这正是截图里两条查询的 bug。
+    """
+    if not re.search(r"(?:到现在|至今|到目前|以来)", text):
+        return None
+    start = _single_day(text, today) or _period_start(text, today)
+    if start and start <= today:
+        return start, today
+    return None
+
+
 def resolve_range(text: str, today: dt.date) -> tuple[dt.date | None, dt.date | None]:
     """把"上个月""今年""昨天""最近一周"等区间表达解析成 [start, end]，用于查询和报告。"""
     if not text:
@@ -239,6 +276,11 @@ def resolve_range(text: str, today: dt.date) -> tuple[dt.date | None, dt.date | 
                     start = (start - DAY).replace(day=1)
                 return start, today
             return today - (num - 1) * DAY, today
+
+    # “从X到现在”必须早于单日/整月判断，否则起点那一天或那个月会把终点吃掉。
+    to_now = _to_now_range(text, today)
+    if to_now:
+        return to_now
 
     # 多日说法（昨天和今天 / 前天到今天）必须早于单日判断，否则 _single_day
     # 只取第一个词（昨天），把“两天合计”误算成一天——这正是截图里的 bug。
