@@ -171,6 +171,56 @@ def execute(db: Session, user_id: int, data: dict[str, Any], text: str, today: d
         lock_ledger(db)
     if action in {"memo", "memo_create", "memo_pending", "memo_cancel_pending", "memo_batch", "memo_query", "memo_update", "memo_cancel"}:
         return _execute_memo(db, user_id, data, action, text, source, context)
+    if action == "weekly":
+        from app.weekly import build_weekly_report, format_weekly_report, week_range
+
+        try:
+            offset = int(data.get("week_offset") or 0)
+        except (TypeError, ValueError):
+            offset = 0
+        start, end = week_range(today, offset)
+        report = build_weekly_report(db, user_id, start, end)
+        return format_weekly_report(report), {
+            "kind": "weekly", "weekly": report,
+            "range": {"start": report["period_start"], "end": report["period_end"]},
+            "stats": {"count": report["count"], "display_total": report["total"], "metric": "expense"},
+            "transactions": []}
+    if action == "query_page":
+        # 翻页不重新理解用户原话：沿用上一条查询的条件，只换页码。
+        # 上一条查询里已有的 start/end、分类、排序原样保留，避免“继续”被当成新查询。
+        base = dict(data.get("query") or {})
+        query = dict(base)
+        detected_sort = query.get("sort_by")
+        if detected_sort not in {None, "amount_desc", "amount_asc", "date_asc"}:
+            query.pop("sort_by", None)
+        rows = load_transactions(db, user_id, query)
+        stats = summarize(rows, query)
+        page_size = 8
+        total = stats["count"]
+        total_pages = max(1, -(-total // page_size)) if total else 1
+        requested = data.get("page") or 1
+        try:
+            requested = int(requested)
+        except (TypeError, ValueError):
+            requested = 1
+        page = min(max(1, requested), total_pages)
+        page_rows = rows[(page - 1) * page_size: page * page_size]
+        label = {"expense": "个人净支出", "income": "收入", "flow": "流水金额", "outstanding": "待结清"}.get(stats["metric"], "个人净支出")
+        if not rows:
+            return "这个范围内没有符合条件的记录。", {
+                "kind": "query", "query": query, "stats": stats, "transactions": [],
+                "truncated": 0, "range": {"start": query.get("start"), "end": query.get("end")},
+                "page": 1, "page_size": page_size, "total_pages": 1}
+        if requested > total_pages:
+            reply = f"已经是最后一页了（第{total_pages}页），共{total}笔，{label}{stats['display_total']:.2f}元。"
+        else:
+            reply = f"第{page}/{total_pages}页，共{total}笔，{label}{stats['display_total']:.2f}元。"
+        return reply, {
+            "kind": "query", "query": query, "stats": stats,
+            "transactions": [serialize(row) for row in page_rows],
+            "truncated": max(0, total - page * page_size),
+            "range": {"start": query.get("start"), "end": query.get("end")},
+            "page": page, "page_size": page_size, "total_pages": total_pages}
     payload: dict[str, Any] = {"kind": action}
     if action == "record":
         items = data.get("transactions") or []
@@ -217,7 +267,9 @@ def execute(db: Session, user_id: int, data: dict[str, Any], text: str, today: d
         rows = load_transactions(db, user_id, query)
         stats = summarize(rows, query)
         payload.update(query=query, stats=stats, transactions=[serialize(row) for row in rows[:40]],
-                       truncated=max(0, len(rows)-40), range={"start": query.get("start"), "end": query.get("end")})
+                       truncated=max(0, len(rows)-40), range={"start": query.get("start"), "end": query.get("end")},
+                       page=1, page_size=8,
+                       total_pages=max(1, -(-stats["count"] // 8)) if stats["count"] else 1)
         label = {"expense": "个人净支出", "income": "收入", "flow": "流水金额", "outstanding": "待结清"}.get(stats["metric"], "个人净支出")
         reply = f"共{stats['count']}笔，{label}{stats['display_total']:.2f}元。" if rows else "这个范围内没有符合条件的记录。"
         if action == "export":

@@ -100,6 +100,30 @@ def prepare_chat(db: Session, user_id: int, body: Any, *, exclude_current: bool 
     plan = ChatPlan(text, safe_images, today, {}, body.confirm_duplicate,
                     context_images=dialogue.images, context=dialogue.state)
     if not safe_images and not compound:
+        # 翻页与周报走确定性解析，不进模型，避免“继续”被当成新查询或闲聊。
+        from app.weekly import parse_pagination, parse_weekly
+
+        last_query_payload = None
+        for row in queries:
+            parsed_payload = json.loads(row.payload_json or "{}")
+            if parsed_payload.get("kind") == "query" and isinstance(parsed_payload.get("query"), dict):
+                last_query_payload = parsed_payload
+                break
+        last_page = int(last_query_payload.get("page") or 1) if last_query_payload else 1
+        target_page = parse_pagination(text, last_page)
+        # “继续”单独出现且有备忘草稿时先让备忘补齐（不拦截，交给后面的备忘逻辑）；
+        # “下一页/上一页/第N页”没有备忘含义，优先翻页。
+        compact_text = re.sub(r"[\s，。！？!?、]", "", text)
+        if target_page is not None and (compact_text != "继续" or not pending):
+            if last_query_payload:
+                plan.data = {"action": "query_page", "page": target_page, "page_size": 8,
+                             "query": last_query_payload.get("query") or {}}
+            else:
+                plan.data = {"action": "clarify", "reply": "先查一次账单，再说「继续」或「下一页」看下一页。"}
+        weekly_offset = parse_weekly(text, today)
+        if not plan.data and weekly_offset is not None:
+            plan.data = {"action": "weekly", "week_offset": weekly_offset}
+    if not plan.data and not safe_images and not compound:
         plan.data = control_intent(text, pending, dialogue.state) or {}
     reference = needs_context(text) or bool(pending and needs_context(str(pending.get("content", ""))))
     cancel_pending = pending and re.sub(r"[\s，。！？!?]", "", text) in memo_mod._CANCEL_WORDS

@@ -124,6 +124,12 @@ def _headline(reply: str, payload: dict) -> str:
 def format_reply(reply: str, payload: dict, *, transcript: str = "") -> str:
     kind, period = payload.get("kind"), payload.get("range") or {}
     stats = payload.get("stats") or {}
+    if kind == "weekly":
+        # 周报文案已由后端算好并排版好，微信端原样直发，不再叠加标题、明细或链接。
+        text = reply.strip()
+        if len(text.encode()) > 3800:
+            text = text.encode()[:3740].decode("utf-8", errors="ignore") + "\n更多明细请到网页查看。"
+        return text
     if kind == "query" and "display_total" in stats:
         lines = ["📒 账单小结", "📅 " + _period(period), ""]
         if stats.get("count", 0):
@@ -137,8 +143,18 @@ def format_reply(reply: str, payload: dict, *, transcript: str = "") -> str:
             lines.append("📅 " + _period(period))
     rows = payload.get("transactions") or payload.get("candidates") or payload.get("deleted") or []
     compact = kind in {"query", "compare", "export"}
-    payments = {row.get("paymentMethod") for row in rows[:8]}
-    dates = {row.get("date") for row in rows[:8] if row.get("date")}
+    # 翻页：正常查询返回最多 40 笔，按页切片；翻页请求本身已在服务端切好本页，
+    # 此时 rows 不超过一页，直接展示，避免对已切片的结果二次切片导致空白页。
+    page = int(payload.get("page") or 1) if kind == "query" else 1
+    page_size = int(payload.get("page_size") or 8) if kind == "query" else 8
+    if kind == "query" and len(rows) > page_size:
+        display_rows = rows[(page - 1) * page_size: page * page_size]
+    elif kind == "query":
+        display_rows = rows
+    else:
+        display_rows = rows[:8]
+    payments = {row.get("paymentMethod") for row in display_rows}
+    dates = {row.get("date") for row in display_rows if row.get("date")}
     shared_date = next(iter(dates)) if len(dates) == 1 else ""
     single_day = period.get("start") if period.get("start") == period.get("end") else None
     sort_by = (payload.get("query") or {}).get("sort_by") or payload.get("sort_by")
@@ -154,9 +170,9 @@ def format_reply(reply: str, payload: dict, *, transcript: str = "") -> str:
                 lines += ["", "↕ 按金额从小到大排列"]
             lines += ["", "账单明细"]
     previous_date = single_day if compact else shared_date
-    kinds = {row.get("kind") for row in rows[:8]}
+    kinds = {row.get("kind") for row in display_rows}
     show_kind = len(kinds) != 1 or not kinds.issubset({"expense"})
-    for row in rows[:8]:
+    for row in display_rows:
         lines.append("")
         if row.get("date") and row["date"] != previous_date:
             lines += ["📅 " + _date(row["date"]), ""]
@@ -164,8 +180,16 @@ def format_reply(reply: str, payload: dict, *, transcript: str = "") -> str:
         lines.extend(_row_lines(row, compact=compact, show_kind=show_kind,
                                 show_payment=len(payments) > 1))
     more = len(rows) > 8 or bool(payload.get("truncated"))
-    if more:
-        count = stats.get("count")
+    total_count = stats.get("count")
+    if kind == "query" and total_count is not None:
+        if page * page_size < total_count:
+            lines += ["", f"📚 第 {page} 页 · 共 {total_count} 笔", "回复「继续」看下一页"]
+        elif page > 1:
+            lines += ["", f"📚 第 {page} 页 · 共 {total_count} 笔", "已经是最后一页了"]
+        elif more:
+            lines += ["", f"📚 已展示 {min(page_size, len(rows))} / {total_count} 笔", "其余明细可到完整账本查看"]
+    elif more:
+        count = total_count
         hint = f"已展示 {min(8, len(rows))} / {count} 笔" if count is not None else "这里只展示前 8 笔"
         lines += ["", "📚 " + hint, "其余明细可到完整账本查看"]
     if kind == "duplicate":

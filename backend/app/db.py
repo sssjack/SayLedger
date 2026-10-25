@@ -214,6 +214,23 @@ class MemoPending(Base):
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
 
 
+class WeeklyReport(Base):
+    """周报自动推送去重：一个用户一周只推一次（周日 20:00）。"""
+
+    __tablename__ = "weekly_reports"
+    __table_args__ = (UniqueConstraint("user_id", "period_start"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    period_start: Mapped[str] = mapped_column(String(10))
+    period_end: Mapped[str] = mapped_column(String(10))
+    push_status: Mapped[str] = mapped_column(String(32), default="")
+    total: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=0)
+    count: Mapped[int] = mapped_column(Integer, default=0)
+    sent_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True, default=None)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
+
+
 class Message(Base):
     """对话历史，用于让 AI 理解上下文与后续追问。"""
 

@@ -145,6 +145,11 @@ class MemoManager:
             try:
                 if self.lease.acquire():
                     await asyncio.to_thread(fire_due_memos)
+                    # 周报自动推送：只在周日 20:00 的扫描里真正触发，其余时间返回 0；
+                    # 同一周去重靠 WeeklyReport 表，同一进程多轮扫描不会重复发送。
+                    from app.weekly import fire_weekly_reports
+
+                    await asyncio.to_thread(fire_weekly_reports)
             except asyncio.CancelledError:
                 raise
             except Exception as exc:  # noqa: BLE001
