@@ -216,13 +216,20 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
-  login: (password: string) =>
+  login: (username: string, password: string) =>
     request<{ ok: boolean }>('/api/login', {
       method: 'POST',
-      body: JSON.stringify({ username: 'me', password }),
+      body: JSON.stringify({ username, password }),
     }),
   logout: () => request<{ ok: boolean }>('/api/logout', { method: 'POST' }),
   me: () => request<{ id: number; username: string }>('/api/me'),
+  listUsers: () =>
+    request<{ users: { id: number; username: string; created_at: string | null }[] }>('/api/users'),
+  createUser: (username: string, password: string) =>
+    request<{ id: number; username: string }>('/api/users', {
+      method: 'POST',
+      body: JSON.stringify({ username, password }),
+    }),
   wechatStatus: () => request<WechatStatus>('/api/wechat/status'),
   connectWechat: () => request<WechatLogin>('/api/wechat/login', { method: 'POST' }),
   wechatQrUrl: (id: string) => `${BASE}/api/wechat/login/${encodeURIComponent(id)}/qr`,

@@ -6,6 +6,7 @@ import { BillsPanel } from './components/BillsPanel'
 import { ReportPanel } from './components/ReportPanel'
 import { MoneyPanel } from './components/MoneyPanel'
 import { MemosPanel } from './components/MemosPanel'
+import { UsersPanel } from './components/UsersPanel'
 import { Chart, TOOLTIP_STYLE } from './components/Chart'
 import { fmtMoney } from './utils'
 import {
@@ -34,6 +35,7 @@ const SUGGESTIONS = [
 
 export default function App() {
   const [authed, setAuthed] = useState<boolean | null>(null)
+  const [me, setMe] = useState<{ id: number; username: string } | null>(null)
   const [categories, setCategories] = useState<Category[]>([])
   const [payments, setPayments] = useState<PaymentMethod[]>([])
   const [tab, setTab] = useState<Tab>('chat')
@@ -47,7 +49,8 @@ export default function App() {
 
   const bootstrap = useCallback(async () => {
     try {
-      await api.me()
+      const meData = await api.me()
+      setMe(meData)
       const [meta, history, stats] = await Promise.all([api.meta(), api.messages(), api.stats('week')])
       setCategories(meta.categories)
       setPayments(meta.payments)
@@ -363,7 +366,7 @@ export default function App() {
           </div>
         )}
 
-        {tab === 'plan' && <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain"><div className="mx-auto max-w-2xl px-4 py-4"><MoneyPanel categories={categoryNames} payments={paymentNames} refreshKey={refreshKey} onChanged={() => void syncLedger()} /></div></div>}
+        {tab === 'plan' && <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain"><div className="mx-auto max-w-2xl space-y-4 px-4 py-4">{me?.username === 'admin' && <UsersPanel />}{/* 管理页：预算与偏好是每个租户自己的，账号管理只给 admin */}<MoneyPanel categories={categoryNames} payments={paymentNames} refreshKey={refreshKey} onChanged={() => void syncLedger()} /></div></div>}
 
         {tab === 'chat' && (
           <div className="shrink-0">
@@ -422,11 +425,7 @@ function Logo({ size = 30 }: { size?: number }) {
 function EmptyState({ todayTotal, onPick }: { todayTotal: number; onPick: (text: string) => void }) {
   return (
     <div className="pt-6 sm:pt-14">
-      <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-ink-800 to-ink-950 text-white shadow-float">
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-          <path d="M6 8h12M6 13h12M6 18h7" />
-        </svg>
-      </div>
+      <img src={assistantAvatar} alt={APP_NAME} className="mx-auto h-12 w-12 rounded-full object-cover shadow-float" />
       <h1 className="mt-4 text-center text-[19px] font-semibold tracking-tight text-ink-900">
         今天花了多少？
       </h1>
@@ -506,17 +505,18 @@ function MiniWeekly() {
 }
 
 function Login({ onDone }: { onDone: () => void }) {
+  const [username, setUsername] = useState('admin')
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault()
-    if (!password.trim()) return
+    if (!username.trim() || !password.trim()) return
     setBusy(true)
     setError('')
     try {
-      await api.login(password)
+      await api.login(username.trim(), password)
       onDone()
     } catch (err) {
       setError(err instanceof Error ? err.message : '登录失败')
@@ -528,26 +528,29 @@ function Login({ onDone }: { onDone: () => void }) {
   return (
     <div className="flex h-full items-center justify-center px-6">
       <form onSubmit={submit} className="w-full max-w-[340px] animate-rise">
-        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-ink-800 to-ink-950 text-white shadow-float">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-            <path d="M6 8h12M6 13h12M6 18h7" />
-          </svg>
-        </div>
+        <img src={assistantAvatar} alt={APP_NAME} className="mx-auto h-12 w-12 rounded-full object-cover shadow-float" />
         <h1 className="mt-5 text-center text-[19px] font-semibold tracking-tight">{APP_NAME}</h1>
-        <p className="mt-1.5 text-center text-[12.5px] text-ink-400">输入访问密码，进入你的账本</p>
+        <p className="mt-1.5 text-center text-[12.5px] text-ink-400">输入账号和密码，进入你的账本</p>
 
         <input
-          type="password"
+          type="text"
           autoFocus
+          value={username}
+          onChange={(event) => setUsername(event.target.value)}
+          placeholder="账号"
+          className="mt-6 w-full rounded-xl border border-ink-200 bg-white px-3.5 py-2.5 text-center text-[14px] outline-none transition placeholder:text-ink-300 focus:border-ink-900"
+        />
+        <input
+          type="password"
           value={password}
           onChange={(event) => setPassword(event.target.value)}
-          placeholder="访问密码"
-          className="mt-6 w-full rounded-xl border border-ink-200 bg-white px-3.5 py-2.5 text-center text-[14px] tracking-widest outline-none transition placeholder:tracking-normal placeholder:text-ink-300 focus:border-ink-900"
+          placeholder="密码"
+          className="mt-3 w-full rounded-xl border border-ink-200 bg-white px-3.5 py-2.5 text-center text-[14px] tracking-widest outline-none transition placeholder:tracking-normal placeholder:text-ink-300 focus:border-ink-900"
         />
         {error && <div className="mt-2 text-center text-[12px] text-red-500">{error}</div>}
         <button
           type="submit"
-          disabled={busy || !password.trim()}
+          disabled={busy || !username.trim() || !password.trim()}
           className="mt-3 w-full rounded-xl bg-ink-900 py-2.5 text-[13.5px] font-medium text-white transition hover:bg-ink-800 disabled:opacity-40"
         >
           {busy ? '验证中…' : '进入'}

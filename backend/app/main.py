@@ -27,7 +27,9 @@ from app.auth import (
     ensure_owner,
     get_db,
     hash_password,
+    migrate_existing_to_admin,
     now_local,
+    require_admin,
     verify_password,
 )
 from app.branding import APP_DESCRIPTION, APP_NAME, APP_NAME_EN, APP_TAGLINE
@@ -51,7 +53,8 @@ ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp", "image/heic", "i
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     init_db()
-    ensure_owner("me")
+    migrate_existing_to_admin()
+    ensure_owner("admin")
     from app.wechat_worker import WechatManager
     manager = WechatManager()
     _app.state.wechat_manager = manager
@@ -84,7 +87,12 @@ app.include_router(wechat_router)
 
 
 class LoginBody(BaseModel):
-    username: str = "me"
+    username: str = "admin"
+    password: str
+
+
+class UserCreateBody(BaseModel):
+    username: str
     password: str
 
 
@@ -336,6 +344,38 @@ def logout():
 
 @app.get("/api/me")
 def me(user=Depends(current_user)):
+    return {"id": user.id, "username": user.username}
+
+
+@app.get("/api/users")
+def list_users(admin=Depends(require_admin), db: Session = Depends(get_db)):
+    """管理员查看全部租户账号（只返回 id、账号名、创建时间，绝不返回密码哈希）。"""
+    rows = db.scalars(select(User).order_by(User.id)).all()
+    return {"users": [
+        {"id": row.id, "username": row.username,
+         "created_at": row.created_at.isoformat() if row.created_at else None}
+        for row in rows
+    ]}
+
+
+@app.post("/api/users")
+def create_user(body: UserCreateBody, admin=Depends(require_admin), db: Session = Depends(get_db)):
+    """管理员创建租户账号：新账号登录后只能看到自己的账本。
+
+    不开放公开注册：公开注册等于把 AI 调用额度交给任何路过的人，
+    所以建号权限只给 admin；想开放注册时再单独加开关，不要默认放开。
+    """
+    username = (body.username or "").strip()
+    if not re.fullmatch(r"[A-Za-z0-9_-]{2,64}", username):
+        raise HTTPException(status_code=400, detail="账号只能用 2 到 64 位字母、数字、下划线或横线")
+    if len(body.password) < 6:
+        raise HTTPException(status_code=400, detail="密码至少 6 位")
+    if db.scalar(select(User).where(User.username == username)):
+        raise HTTPException(status_code=400, detail="账号已存在")
+    user = User(username=username, password_hash=hash_password(body.password))
+    db.add(user)
+    db.commit()
+    db.refresh(user)
     return {"id": user.id, "username": user.username}
 
 

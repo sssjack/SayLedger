@@ -78,7 +78,7 @@ def current_user(request: Request, db: Session = Depends(get_db)) -> User:
 
 
 def ensure_owner(username: str) -> dict[str, str]:
-    """首次启动时，用环境变量里的密码创建唯一账户。"""
+    """首次启动时，用环境变量里的密码创建初始账户（多租户下即 admin）。"""
     db = SessionLocal()
     try:
         existing = db.scalar(select(User).limit(1))
@@ -89,6 +89,37 @@ def ensure_owner(username: str) -> dict[str, str]:
         return {"created": "ok"}
     finally:
         db.close()
+
+
+def migrate_existing_to_admin() -> dict[str, str]:
+    """多租户迁移：把已有数据绑定到 admin 账号。
+
+    没有 admin 时，把最早的已有账号（历史上叫 me）改名为 admin。
+    只改用户名这一行：所有账单、备忘、消息、微信绑定都按 user_id 关联，
+    数据原地跟随，一笔都不动；已发出的登录 token 按 user_id 生效，
+    改名后也不失效。已存在 admin 时什么都不做，可重复跑。
+    """
+    db = SessionLocal()
+    try:
+        if db.scalar(select(User).where(User.username == "admin")):
+            return {"migrated": "skipped"}
+        candidate = db.scalar(select(User).where(User.username == "me"))
+        if candidate is None:
+            candidate = db.scalar(select(User).order_by(User.id))
+        if candidate is None:
+            return {"migrated": "skipped"}
+        candidate.username = "admin"
+        db.commit()
+        return {"migrated": "ok"}
+    finally:
+        db.close()
+
+
+def require_admin(user: User = Depends(current_user)) -> User:
+    """管理员依赖：admin 账号即管理员，不另设角色字段。"""
+    if user.username != "admin":
+        raise HTTPException(status_code=403, detail="只有管理员可以操作")
+    return user
 
 
 def now_local() -> dt.datetime:
