@@ -43,6 +43,78 @@ def local_intent(text: str, today: dt.date) -> dict[str, Any] | None:
     return None
 
 
+# 简单记账的确定性兜底：只在模型调用失败时用，模型正常时不改变原有行为。
+# 宁可少认、绝不猜错：凡是带退款、报销、借还、AA、修改、查询等词，或金额、
+# 日期、结构稍复杂的句子，一律返回 None 交给模型或报错，绝不硬记。
+_RECORD_GUARDS = ("退款", "退货", "报销", "借出", "借入", "借钱", "还我", "还款", "还钱",
+                  "转账", "提现", "收入", "工资", "AA", "平摊", "分摊", "押金", "代付",
+                  "代垫", "修改", "改成", "删除", "撤销", "预算", "提醒", "备忘", "闹钟",
+                  "查询", "导出", "花了多少", "多少钱", "取消", "停止", "不要", "不是",
+                  "共", "合计", "总共", "明天", "后天", "下周", "下个月")
+_RECORD_CATEGORY_KEYWORDS = (
+    ("午饭", "餐饮"), ("晚饭", "餐饮"), ("早餐", "餐饮"), ("早饭", "餐饮"),
+    ("夜宵", "餐饮"), ("吃饭", "餐饮"), ("外卖", "餐饮"), ("火锅", "餐饮"),
+    ("烧烤", "餐饮"), ("奶茶", "餐饮"), ("咖啡", "餐饮"), ("饮料", "餐饮"),
+    ("聚餐", "餐饮"), ("午餐", "餐饮"), ("晚餐", "餐饮"),
+    ("打车", "交通"), ("地铁", "交通"), ("公交", "交通"), ("出租", "交通"),
+    ("加油", "交通"), ("停车", "交通"),
+    ("超市", "购物"), ("房租", "居住"), ("水电", "居住"), ("物业", "居住"),
+    ("衣服", "服饰"), ("鞋", "服饰"), ("电影", "娱乐"), ("游戏", "娱乐"),
+    ("药", "医疗"), ("书", "教育"),
+)
+
+
+def parse_simple_record(text: str, today: dt.date) -> dict[str, Any] | None:
+    """解析“午饭花了10.9元，买cursor的auto花了25.9元”这类简单支出。
+
+    每句必须完整匹配“某事花了金额元”，且只能是普通消费：金额只能出现一次、
+    主体里不能再有数字（带数量的“买3杯奶茶花了54元”交给模型）。分类只认
+    上面列出的常见词，认不出的留空、服务端会归为“其他”，用户可在网页改，
+    或设一条商户分类规则——不猜分类，好过记错分类。
+    """
+    if not text or len(text) > 200:
+        return None
+    if any(guard in text for guard in _RECORD_GUARDS):
+        return None
+    if re.search(r"[吗么？?]|是不是|是否", text):
+        return None
+    clauses = [clause.strip() for clause in re.split(r"[，,、；;。]", text) if clause.strip()]
+    if not clauses or len(clauses) > 10:
+        return None
+    transactions = []
+    for clause in clauses:
+        match = re.fullmatch(r"(.+?)花了(\d+(?:\.\d{1,2})?)元?", clause)
+        if not match:
+            return None
+        subject, amount = match.group(1), match.group(2)
+        if re.search(r"\d", subject):
+            return None
+        occurred_at = None
+        for word in ("昨天", "前天", "今天"):
+            if word in subject:
+                occurred_at = word
+                break
+        while subject and any(subject.startswith(prefix) for prefix in ("今天", "昨天", "前天", "我", "买")):
+            for prefix in ("今天", "昨天", "前天", "我", "买"):
+                if subject.startswith(prefix):
+                    subject = subject[len(prefix):]
+                    break
+        subject = subject.strip()
+        if not subject:
+            return None
+        category = ""
+        for keyword, name in _RECORD_CATEGORY_KEYWORDS:
+            if keyword in subject:
+                category = name
+                break
+        item: dict[str, Any] = {"amount": amount, "kind": "expense",
+                                "category": category, "note": subject}
+        if occurred_at:
+            item["occurred_at"] = occurred_at
+        transactions.append(item)
+    return {"action": "record", "transactions": transactions}
+
+
 def _execute_memo(db: Session, user_id: int, data: dict[str, Any], action: str,
                   text: str, source: str, context: dict | None = None) -> tuple[str, dict[str, Any]]:
     """备忘动作：草稿齐了就建 Memo；缺时刻/事件先存草稿追问，下一句补齐。"""

@@ -3,8 +3,11 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import logging
 import re
 import threading
+
+logger = logging.getLogger(__name__)
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Any
@@ -147,7 +150,21 @@ def prepare_chat(db: Session, user_id: int, body: Any, *, exclude_current: bool 
         if not plan.data:
             plan.data = local_intent(text, today) if not safe_images and not compound else None
         if plan.data is None:
-            plan.data = main.call_model(messages, max_tokens=3000).data
+            try:
+                plan.data = main.call_model(messages, max_tokens=3000).data
+            except AIError:
+                # 模型挂了也别让简单记账全军覆没：确定性兜底只认“某事花了金额”
+                # 这类普通消费，复杂记账（AA、退款、借还等）仍返回 None、走报错，
+                # 绝不硬记。模型正常时这条路根本不会走到，原有行为不变。
+                fallback = None
+                if not safe_images:
+                    from app.conversation import parse_simple_record
+
+                    fallback = parse_simple_record(text, today)
+                if fallback is not None:
+                    plan.data = fallback
+                else:
+                    raise
         missing = omissions(text, plan.data, dialogue.state)
         if missing:
             repair = [*messages, {"role": "assistant", "content": json.dumps(plan.data, ensure_ascii=False)},
@@ -163,8 +180,14 @@ def prepare_chat(db: Session, user_id: int, body: Any, *, exclude_current: bool 
                 and plan.data.get("action") in {"record", "update", "delete", "refund", "settle", "undo",
                                                 "budget_set", "budget_delete", "preference_set"}):
             plan.data = {"action": "clarify", "reply": "我会按提醒来处理，不会记账。请说明要提醒的具体步骤和时间；如果是按图片计划，请确认今天是第几天。"}
-    except AIError:
-        plan.error = "AI暂时不可用，这条消息里的操作都没有执行。请稍后重试。"
+    except AIError as exc:
+        # 只记上游错误本身（状态码/超时/网络），不记用户原话和密钥；
+        # 以前这里静默吞掉，导致 2026-10-26 的 429 只能靠外部探查才查到。
+        logger.warning("AI调用失败：%s", str(exc)[:200])
+        if "429" in str(exc):
+            plan.error = "AI上游当前过载（429限流），这条消息没有执行；简单记账已尝试本地解析，仍不成功请稍后再试。"
+        else:
+            plan.error = "AI暂时不可用，这条消息里的操作都没有执行。请稍后重试。"
     return plan
 
 
