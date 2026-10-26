@@ -17,6 +17,7 @@ import {
 } from './icons'
 import { ICON_MAP } from './components/TransactionCard'
 import { APP_NAME, APP_TAGLINE } from './brand'
+import assistantAvatar from './assets/assistant-avatar.webp'
 
 type Tab = 'chat' | 'bills' | 'report' | 'plan' | 'memos'
 
@@ -314,9 +315,7 @@ export default function App() {
                   ))}
                   {sending && (
                     <div className="flex animate-rise gap-2.5">
-                      <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-ink-800 to-ink-950 text-white">
-                        <IconSpark width={14} height={14} />
-                      </div>
+                      <img src={assistantAvatar} alt="小助手" className="mt-0.5 h-7 w-7 shrink-0 rounded-full object-cover" />
                       <div className="flex items-center gap-1 pt-1.5">
                         {[0, 1, 2].map((index) => (
                           <span

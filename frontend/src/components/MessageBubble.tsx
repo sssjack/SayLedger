@@ -3,8 +3,9 @@ import { BASE, type ChatMessage, type Stats, type Transaction } from '../api'
 import { TransactionCard } from './TransactionCard'
 import { Chart, TOOLTIP_STYLE } from './Chart'
 import { fmtDateLabel, fmtMoney, groupByDate } from '../utils'
-import { IconChevron, IconSpark } from '../icons'
+import { IconChevron } from '../icons'
 import { BudgetProgress } from './BudgetProgress'
+import assistantAvatar from '../assets/assistant-avatar.webp'
 
 type Props = {
   message: ChatMessage
@@ -63,9 +64,7 @@ export function MessageBubble({ message, categories, payments, onUpdate, onDelet
 
   return (
     <div className="flex animate-rise gap-2.5">
-      <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-ink-800 to-ink-950 text-white">
-        <IconSpark width={14} height={14} />
-      </div>
+      <img src={assistantAvatar} alt="小助手" className="mt-0.5 h-7 w-7 shrink-0 rounded-full object-cover" />
       <div className="min-w-0 flex-1 space-y-2">
         {message.content && (
           <div className="whitespace-pre-wrap text-[14.5px] leading-relaxed text-ink-900">
