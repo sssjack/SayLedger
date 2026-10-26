@@ -222,6 +222,11 @@ export const api = {
       body: JSON.stringify({ username, password }),
     }),
   logout: () => request<{ ok: boolean }>('/api/logout', { method: 'POST' }),
+  register: (username: string, password: string) =>
+    request<{ ok: boolean; id: number; username: string }>('/api/register', {
+      method: 'POST',
+      body: JSON.stringify({ username, password }),
+    }),
   me: () => request<{ id: number; username: string }>('/api/me'),
   listUsers: () =>
     request<{ users: { id: number; username: string; created_at: string | null }[] }>('/api/users'),

@@ -505,6 +505,7 @@ function MiniWeekly() {
 }
 
 function Login({ onDone }: { onDone: () => void }) {
+  const [mode, setMode] = useState<'login' | 'register'>('login')
   const [username, setUsername] = useState('admin')
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
@@ -516,13 +517,22 @@ function Login({ onDone }: { onDone: () => void }) {
     setBusy(true)
     setError('')
     try {
-      await api.login(username.trim(), password)
+      if (mode === 'register') {
+        await api.register(username.trim(), password)
+      } else {
+        await api.login(username.trim(), password)
+      }
       onDone()
     } catch (err) {
-      setError(err instanceof Error ? err.message : '登录失败')
+      setError(err instanceof Error ? err.message : mode === 'register' ? '注册失败' : '登录失败')
     } finally {
       setBusy(false)
     }
+  }
+
+  const switchMode = (next: 'login' | 'register') => {
+    setMode(next)
+    setError('')
   }
 
   return (
@@ -530,7 +540,9 @@ function Login({ onDone }: { onDone: () => void }) {
       <form onSubmit={submit} className="w-full max-w-[340px] animate-rise">
         <img src={assistantAvatar} alt={APP_NAME} className="mx-auto h-12 w-12 rounded-full object-cover shadow-float" />
         <h1 className="mt-5 text-center text-[19px] font-semibold tracking-tight">{APP_NAME}</h1>
-        <p className="mt-1.5 text-center text-[12.5px] text-ink-400">输入账号和密码，进入你的账本</p>
+        <p className="mt-1.5 text-center text-[12.5px] text-ink-400">
+          {mode === 'register' ? '只需要账号和密码，账号不重复就能注册' : '输入账号和密码，进入你的账本'}
+        </p>
 
         <input
           type="text"
@@ -553,7 +565,14 @@ function Login({ onDone }: { onDone: () => void }) {
           disabled={busy || !username.trim() || !password.trim()}
           className="mt-3 w-full rounded-xl bg-ink-900 py-2.5 text-[13.5px] font-medium text-white transition hover:bg-ink-800 disabled:opacity-40"
         >
-          {busy ? '验证中…' : '进入'}
+          {busy ? '验证中…' : mode === 'register' ? '注册并进入' : '进入'}
+        </button>
+        <button
+          type="button"
+          onClick={() => switchMode(mode === 'register' ? 'login' : 'register')}
+          className="mt-3 w-full text-center text-[12.5px] text-ink-500 underline-offset-2 hover:text-ink-900 hover:underline"
+        >
+          {mode === 'register' ? '已有账号？去登录' : '没有账号？注册一个'}
         </button>
       </form>
     </div>

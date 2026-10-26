@@ -48,7 +48,7 @@ export function UsersPanel() {
     <div className="card p-4">
       <div className="text-[13.5px] font-semibold">账号管理</div>
       <p className="mt-1 text-[12px] leading-relaxed text-ink-500">
-        只有管理员能建号，不开放公开注册。每个账号登录后只能看到自己的账单、备忘和微信绑定。
+        访客也可以在登录页自行注册；管理员也可以在这里建号。每个账号登录后只能看到自己的账单、备忘和微信绑定。
       </p>
       <form onSubmit={create} className="mt-3 flex flex-col gap-2 sm:flex-row">
         <input

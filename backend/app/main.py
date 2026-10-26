@@ -316,13 +316,21 @@ def build_user_content(text: str, image_paths: list[str]) -> list[dict[str, Any]
 # ---------------------------------------------------------------- 鉴权
 
 
-@app.post("/api/login")
-def login(body: LoginBody, db: Session = Depends(get_db)):
-    user = db.scalar(select(User).where(User.username == body.username))
-    if not user or not verify_password(body.password, user.password_hash):
-        raise HTTPException(status_code=401, detail="账号或密码不对")
+def _validate_new_account(username: str, password: str, db: Session) -> str:
+    """注册与管理员建号共用的校验：账号格式、密码长度、账号不重复。"""
+    username = (username or "").strip()
+    if not re.fullmatch(r"[A-Za-z0-9_-]{2,64}", username):
+        raise HTTPException(status_code=400, detail="账号只能用 2 到 64 位字母、数字、下划线或横线")
+    if len(password) < 6:
+        raise HTTPException(status_code=400, detail="密码至少 6 位")
+    if db.scalar(select(User).where(User.username == username)):
+        raise HTTPException(status_code=400, detail="账号已存在")
+    return username
+
+
+def _login_response(user: User, payload: dict | None = None) -> JSONResponse:
     token = create_token(user.id)
-    resp = JSONResponse({"ok": True})
+    resp = JSONResponse(payload or {"ok": True})
     resp.set_cookie(
         "ledger_token",
         token,
@@ -333,6 +341,28 @@ def login(body: LoginBody, db: Session = Depends(get_db)):
         path="/",
     )
     return resp
+
+
+@app.post("/api/login")
+def login(body: LoginBody, db: Session = Depends(get_db)):
+    user = db.scalar(select(User).where(User.username == body.username))
+    if not user or not verify_password(body.password, user.password_hash):
+        raise HTTPException(status_code=401, detail="账号或密码不对")
+    return _login_response(user)
+
+
+@app.post("/api/register")
+def register(body: UserCreateBody, db: Session = Depends(get_db)):
+    """公开注册：只需要账号和密码，账号不重复就能注册，注册完直接登录。
+
+    注册即登录（直接发登录 cookie），不用再输一遍账号密码。
+    """
+    username = _validate_new_account(body.username, body.password, db)
+    user = User(username=username, password_hash=hash_password(body.password))
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return _login_response(user, {"ok": True, "id": user.id, "username": user.username})
 
 
 @app.post("/api/logout")
@@ -362,16 +392,10 @@ def list_users(admin=Depends(require_admin), db: Session = Depends(get_db)):
 def create_user(body: UserCreateBody, admin=Depends(require_admin), db: Session = Depends(get_db)):
     """管理员创建租户账号：新账号登录后只能看到自己的账本。
 
-    不开放公开注册：公开注册等于把 AI 调用额度交给任何路过的人，
-    所以建号权限只给 admin；想开放注册时再单独加开关，不要默认放开。
+    与公开注册用同一套校验（账号格式、密码长度、账号不重复），
+    区别只是这里由 admin 代建，不发登录 cookie。
     """
-    username = (body.username or "").strip()
-    if not re.fullmatch(r"[A-Za-z0-9_-]{2,64}", username):
-        raise HTTPException(status_code=400, detail="账号只能用 2 到 64 位字母、数字、下划线或横线")
-    if len(body.password) < 6:
-        raise HTTPException(status_code=400, detail="密码至少 6 位")
-    if db.scalar(select(User).where(User.username == username)):
-        raise HTTPException(status_code=400, detail="账号已存在")
+    username = _validate_new_account(body.username, body.password, db)
     user = User(username=username, password_hash=hash_password(body.password))
     db.add(user)
     db.commit()
