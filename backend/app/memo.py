@@ -141,6 +141,25 @@ _MEMO_HINT = re.compile(r"提醒|备忘|闹钟")
 _CANCEL_WORDS = {"取消", "算了", "不用了", "不要了", "取消备忘", "取消提醒", "先不记了", "不记了"}
 
 
+def is_cancel_reminder(text: str) -> bool:
+    """判断“取消”指的是否就是提醒本身。
+
+    只有取消提醒/取消这个提醒/取消明天的提醒这类才算；“提醒我取消套餐”
+    “下午两点提醒我取消订单”里的取消是提醒内容（取消套餐、取消订单），
+    不能因为含“取消”两个字就把整句推给模型——这正是 2026-10-26 那次
+    “AI暂时不可用”的根因：内容里的取消让确定性解析直接放弃了。
+    """
+    compact = re.sub(r"[\s，。！？!?]", "", text or "")
+    if compact in _CANCEL_WORDS:
+        return True
+    if re.search(r"取消(这个|这条|刚才|这组|这份|所有|全部)?(提醒|备忘|闹钟)", text or ""):
+        return True
+    # 取消明天的提醒、取消今天的提醒：取消的对象仍是提醒本身。
+    if re.search(r"取消(明天|今天|后天|下周|本周|刚才)(的)?(提醒|备忘|闹钟)", text or ""):
+        return True
+    return False
+
+
 def is_status_question(text: str) -> bool:
     compact = re.sub(r"\s+", "", text or "")
     if not re.search(r"提醒|备忘|闹钟|循环|重复", compact):
@@ -262,8 +281,8 @@ def build_trigger(draft: dict[str, Any], now: dt.datetime) -> dt.datetime | None
 def parse_memo_request(text: str, now: dt.datetime) -> dict[str, Any] | None:
     """解析一句备忘请求；不是备忘意图返回 None，否则返回草稿 dict（含 missing）。"""
     text = (text or "").strip()
-    if (not text or not _MEMO_HINT.search(text) or is_status_question(text)
-            or re.search(r"看着办|你定|你安排|自行安排|修改|改成|改为|取消|循环|是不是|是否|[吗么？?]|工作日|周末|每月|每个月|小时一次|分钟一次|持续|直到|截止|除了|分别|每天.*[次遍]", text)):
+    if (not text or not _MEMO_HINT.search(text) or is_status_question(text) or is_cancel_reminder(text)
+            or re.search(r"看着办|你定|你安排|自行安排|修改|改成|改为|循环|是不是|是否|[吗么？?]|工作日|周末|每月|每个月|小时一次|分钟一次|持续|直到|截止|除了|分别|每天.*[次遍]", text)):
         return None
     today = now.date()
     draft: dict[str, Any] = {"content": "", "trigger_at": None, "date": None, "time": None,
@@ -320,7 +339,10 @@ def continue_pending(text: str, draft: dict[str, Any], now: dt.datetime) -> tupl
     compact = re.sub(r"[\s，。！？!?]", "", text or "")
     if is_status_question(text) or allows_auto_time(text) or re.search(r"循环|重复|修改|改成.*(?:每|循环)", text):
         return "unrelated", draft
-    if compact in _CANCEL_WORDS or "取消" in compact and len(compact) <= 8:
+    # 有草稿时短句“取消这个”仍算取消草稿；但“提醒我取消套餐”里的取消是新内容，
+    # 不能因为短就把草稿取消掉——“提醒我”在取消之前，说明取消的是后面的事。
+    if compact in _CANCEL_WORDS or (is_cancel_reminder(text) and len(compact) <= 20) or (
+            "取消" in compact and len(compact) <= 8 and "提醒我" not in text):
         return "cancel", draft
     if (re.search(r"查账|账单|预算|撤销|花了|花多少|多少钱|支出|收入|昨天|上周|上个月", compact)
             or re.search(r"(?:午饭|晚饭|早餐|咖啡|打车|买了).*\d", compact)) and not _MEMO_HINT.search(text):
