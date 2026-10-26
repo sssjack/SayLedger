@@ -410,14 +410,12 @@ export default function App() {
 
 function Logo({ size = 30 }: { size?: number }) {
   return (
-    <span
-      className="flex items-center justify-center rounded-[10px] bg-gradient-to-br from-ink-800 to-ink-950 text-white"
+    <img
+      src={assistantAvatar}
+      alt={APP_NAME}
+      className="shrink-0 rounded-full object-cover"
       style={{ width: size, height: size }}
-    >
-      <svg width={size * 0.55} height={size * 0.55} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
-        <path d="M6 8h12M6 13h12M6 18h7" />
-      </svg>
-    </span>
+    />
   )
 }
 
