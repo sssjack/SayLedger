@@ -249,6 +249,11 @@ def create_transactions(
             item["settlement_kind"] = "aa"
         fields = prepare_fields(db, user_id, item)
         occurred = parse_occurred_at(item.get("occurred_at"), fallback_date, context="" if fields["kind"] in RELATED else raw_input)
+        # 用户规则：整句只提到今天时，日期一定是消息当天的本地日期，
+        # 不管模型在 occurred_at 里写了什么具体日期（只换日期，不动时刻）。
+        from app.dateparse import mentions_today_only
+        if mentions_today_only(raw_input):
+            occurred = dt.datetime.combine(fallback_date, occurred.time())
         if occurred.date() > fallback_date:
             raise HTTPException(400, "这笔还没发生，请在实际付款后记账")
         category = item.get("category")
@@ -588,7 +593,7 @@ def resolve_change_targets(
     return []
 
 
-def patch_transaction(db: Session, user_id: int, tx: Transaction, changes: dict[str, Any]) -> None:
+def patch_transaction(db: Session, user_id: int, tx: Transaction, changes: dict[str, Any], text: str = "") -> None:
     lock_ledger(db)
     db.refresh(tx)
     if any(key in changes and changes[key] != getattr(tx, key) for key in ("category", "event")):
@@ -617,6 +622,10 @@ def patch_transaction(db: Session, user_id: int, tx: Transaction, changes: dict[
         tx.payment_method = normalize_payment(changes["payment_method"])
     if "occurred_at" in changes:
         tx.occurred_at = parse_occurred_at(changes["occurred_at"], now_local().date())
+        # 用户规则同记账：整句只提到今天时，日期一定是当天的本地日期。
+        from app.dateparse import mentions_today_only
+        if mentions_today_only(text):
+            tx.occurred_at = dt.datetime.combine(now_local().date(), tx.occurred_at.time())
         if tx.occurred_at.date() > now_local().date():
             raise HTTPException(400, "不能把实际流水改为未来日期")
 
@@ -637,7 +646,7 @@ def apply_ai_change(db: Session, user_id: int, data: dict[str, Any], action: str
         if not changes:
             raise HTTPException(400, "请说明要修改什么")
         for tx in rows:
-            patch_transaction(db, user_id, tx, changes)
+            patch_transaction(db, user_id, tx, changes, text=text)
     log_operation(db, user_id, before, rows)
     db.flush()
     enrich(db, rows)

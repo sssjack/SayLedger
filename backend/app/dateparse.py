@@ -14,6 +14,28 @@ DAY = dt.timedelta(days=1)
 CN_NUM = {"零": 0, "一": 1, "二": 2, "两": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9, "十": 10,
           "十一": 11, "十二": 12}
 
+_TODAY_WORDS = ("今天", "今日", "今早", "今晚", "今晨")
+_OTHER_DAY_WORDS = (
+    "昨天", "昨晚", "前天", "大前天", "明天", "后天", "大后天",
+    "上周", "下周", "本周", "上星期", "下星期", "本星期",
+    "上月", "下月", "本月", "上个月", "下个月", "这个月",
+)
+_EXPLICIT_DATE_RE = re.compile(r"\d{4}[-/年]\d{1,2}[-/月]\d{1,2}|(?<!\d)\d{1,2}月\d{1,2}[日号]")
+
+
+def mentions_today_only(text: str) -> bool:
+    """整句话只提到今天、没提其它日子时返回 True。
+
+    用户规则：提到今天就一定是当天。单日句子用它在服务端强制日期，
+    不管模型在 occurred_at 里写了什么具体日期；多日句子
+    （如“昨天……今天……”）不强制，沿用每笔自己的日期词。
+    """
+    if not text or not any(word in text for word in _TODAY_WORDS):
+        return False
+    if any(word in text for word in _OTHER_DAY_WORDS):
+        return False
+    return _EXPLICIT_DATE_RE.search(text) is None
+
 
 def _weekday_index(word: str | None) -> int | None:
     """返回 0=周一 ... 6=周日。"""
