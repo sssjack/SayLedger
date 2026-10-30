@@ -35,6 +35,60 @@ def snapshot(db, user_id: int, focus_ids: list[int]) -> dict:
             "plans": templates}
 
 
+_REMINDER_QUESTION_AFTER = re.compile(
+    r"(提醒|备忘|闹钟)[^，。！？!?]*?(啥|什么|哪些|哪个|几点|什么时候|吗|么|是否|是不是|有没有|有啥|怎么|如何)")
+_REMINDER_QUESTION_BEFORE = re.compile(
+    r"(啥|什么|哪些|有啥|有什么|查看|看看|列出)([^，。！？!?]*?)(提醒|备忘|闹钟)")
+_REMINDER_BLOCK_WORDS = re.compile(r"取消|删除|停止|关掉|修改|改成|改为|调整|不要|不用|不再")
+_REMINDER_SCOPE_ALL = re.compile(r"所有|全部|有哪些|列出|我的提醒")
+
+
+def _query_day(text: str, today: dt.date) -> tuple[dt.date, str] | None:
+    """问句里指的哪一天：今天优先（用户规则：提到今天就一定是当天）。"""
+    if re.search(r"今天|今日", text):
+        return today, f"今天（{today:%m月%d日}）"
+    if re.search(r"明天|明日", text):
+        day = today + dt.timedelta(days=1)
+        return day, f"明天（{day:%m月%d日}）"
+    if "大后天" in text:
+        day = today + dt.timedelta(days=3)
+        return day, f"大后天（{day:%m月%d日}）"
+    if "后天" in text:
+        day = today + dt.timedelta(days=2)
+        return day, f"后天（{day:%m月%d日}）"
+    if "昨天" in text:
+        day = today - dt.timedelta(days=1)
+        return day, f"昨天（{day:%m月%d日}）"
+    if "前天" in text:
+        day = today - dt.timedelta(days=2)
+        return day, f"前天（{day:%m月%d日}）"
+    return None
+
+
+def parse_reminder_query(text: str, today: dt.date) -> dict | None:
+    """识别“问已有提醒”的句子，返回按天过滤的 memo_query；不是则返回 None。
+
+    回归 2026-10-30：用户问“你今天要提醒我啥”，旧逻辑只认带吗/么/？
+    的问句，啥没被认成疑问词，且“提醒我”又被状态问题守卫排除，
+    结果把问句当成新建提醒，留了内容为“你要啥”的错误草稿并追问几点。
+    问句的判别只看疑问词，不看有没有提醒我；新建/取消/修改意图先排除。
+    没写哪天时默认问今天；“所有/全部/有哪些/列出/我的提醒”这类
+    全量查询仍交给 control_intent 的 scope all 处理。
+    """
+    text = text or ""
+    if not re.search(r"提醒|备忘|闹钟", text):
+        return None
+    if _REMINDER_BLOCK_WORDS.search(text):
+        return None
+    day_result = _query_day(text, today)
+    if day_result is None and _REMINDER_SCOPE_ALL.search(text):
+        return None
+    if not (_REMINDER_QUESTION_AFTER.search(text) or _REMINDER_QUESTION_BEFORE.search(text)):
+        return None
+    day, desc = day_result or (today, f"今天（{today:%m月%d日}）")
+    return {"action": "memo_query", "scope": "day", "date": day.isoformat(), "date_desc": desc}
+
+
 def control_intent(text: str, pending: dict | None, state: dict) -> dict | None:
     if rules.is_status_question(text) and _generic_reference(text) or (state.get("reminders", {}).get("focus_ids") and re.fullmatch(r"(?:那|现在)?(?:设置|安排)(?:好了|好|成功|生效)了吗[？?]?", text.strip())):
         return {"action": "memo_query", "scope": "all" if re.search(r"所有|全部|有哪些|列出|我的提醒", text) else "focus"}
@@ -139,6 +193,21 @@ def execute_control(db, user_id: int, data: dict, text: str, context: dict, now:
     if not rows:
         return "📭 没有找到对应的已保存提醒。还在商量中的计划需要补齐信息后才会生效。", {"kind": "memo_query", "memos": []}
     if action == "memo_query":
+        if data.get("date"):
+            # 按天问提醒：只列那天触发的（含当天已响过的），不列其它日子。
+            all_rows = list(db.scalars(select(Memo).where(Memo.user_id == user_id)
+                                        .order_by(Memo.next_trigger_at)).all())
+            day_rows = [row for row in all_rows
+                        if row.status in ("active", "done") and row.next_trigger_at
+                        and row.next_trigger_at.date().isoformat() == data["date"]]
+            if not day_rows:
+                desc = data.get("date_desc") or data["date"]
+                return f"📭 {desc}没有安排提醒。", {"kind": "memo_query", "memos": [], "date": data["date"]}
+            title = f"{data.get('date_desc') or data['date']}的提醒安排"
+            return result_reply(day_rows, title), {
+                "kind": "memo_query",
+                "memos": [rules.serialize_memo(row) for row in day_rows],
+                "date": data["date"]}
         requested = rules.parse_repeat(text)
         active = [row for row in rows if row.status == "active"]
         if requested and active:

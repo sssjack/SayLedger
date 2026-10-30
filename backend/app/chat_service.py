@@ -127,7 +127,10 @@ def prepare_chat(db: Session, user_id: int, body: Any, *, exclude_current: bool 
         if not plan.data and weekly_offset is not None:
             plan.data = {"action": "weekly", "week_offset": weekly_offset}
     if not plan.data and not safe_images and not compound:
-        plan.data = control_intent(text, pending, dialogue.state) or {}
+        # 问已有提醒（今天要提醒我啥/有什么提醒）确定性走查询，绝不能
+        # 掉进后面的新建解析，更不能在有草稿时被当成补齐草稿。
+        from app.memo_control import parse_reminder_query
+        plan.data = parse_reminder_query(text, today) or control_intent(text, pending, dialogue.state) or {}
     reference = needs_context(text) or bool(pending and needs_context(str(pending.get("content", ""))))
     cancel_pending = pending and re.sub(r"[\s，。！？!?]", "", text) in memo_mod._CANCEL_WORDS
     if not plan.data and not safe_images and text and not compound and (not reference or cancel_pending):
