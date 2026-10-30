@@ -49,9 +49,16 @@ def cn_int(raw: str | None) -> int | None:
 # ---------------------------------------------------------------- 时刻解析
 
 _CLOCK_RE = re.compile(
-    r"(凌晨|早晨|早上|上午|中午|下午|傍晚|晚上|夜里)?\s*"
+    r"(凌晨|清晨|早晨|早上|上午|今早|今晨|明早|明晨|中午|下午|傍晚|晚上|夜里|今晚|今夜|明晚|明夜|深夜|半夜|午夜|晚|夜)?\s*"
     r"(\d{1,2}|[零一二两三四五六七八九十]+)\s*(?:[:：]\s*(\d{1,2})|点(?:\s*(半)|(?:\s*(\d{1,2}|[零一二两三四五六七八九十]+)\s*分?))?)"
 )
+
+# 时段换算：下午/晚上类一律是下午（1-11 点加 12 小时）；
+# 夜里类横跨午夜，7-11 点是晚上，1-6 点是凌晨之后，不加；
+# 凌晨/早上类 12 点是午夜 0 点。
+_PM_PERIODS = ("下午", "傍晚", "晚上", "今晚", "明晚", "晚")
+_NIGHT_PERIODS = ("夜里", "今夜", "明夜", "深夜", "夜")
+_AM_PERIODS = ("凌晨", "清晨", "早晨", "早上", "上午", "今早", "今晨", "明早", "明晨", "午夜", "半夜")
 
 
 def parse_clock(text: str) -> tuple[dt.time | None, str]:
@@ -72,13 +79,17 @@ def parse_clock(text: str) -> tuple[dt.time | None, str]:
         minute = cn_int(min_raw) or 0
     if minute > 59:
         return None, ""
-    if period in ("下午", "傍晚", "晚上", "夜里"):
+    if period in _PM_PERIODS:
         if hour < 12:
             hour += 12
-    elif period == "中午":
-        if hour <= 11:
+    elif period in _NIGHT_PERIODS:
+        if 7 <= hour < 12:
             hour += 12
-    elif period in ("凌晨", "早晨", "早上", "上午"):
+    elif period == "中午":
+        # 中午 11 点、12 点就是上午 11 点和正午，不加；中午 1-5 点是下午。
+        if 1 <= hour <= 5:
+            hour += 12
+    elif period in _AM_PERIODS:
         if hour == 12:
             hour = 0
     return dt.time(hour, minute), match.group(0)
