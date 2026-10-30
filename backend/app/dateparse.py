@@ -219,6 +219,66 @@ def _multi_day_range(text: str, today: dt.date) -> tuple[dt.date | None, dt.date
     return None
 
 
+_WEEKDAY_OFFSET = {"一": 0, "二": 1, "三": 2, "四": 3, "五": 4, "六": 5, "日": 6, "天": 6,
+                   "1": 0, "2": 1, "3": 2, "4": 3, "5": 4, "6": 5, "7": 6}
+_RELATIVE_DAY_DELTA = {"今天": 0, "今日": 0, "今晚": 0, "明天": 1, "明早": 1, "明晚": 1,
+                       "昨天": -1, "昨日": -1, "昨晚": -1, "前天": -2, "后天": 2}
+# 一侧是星期几（可带这/本/上/下锚点，也可裸写“周五”），另一侧是星期几或
+# 今天/昨天这类相对日。组 1-3 是左侧（锚点、星期、相对日），组 4-6 是右侧。
+_DAY_SIDE_RE = (
+    r"(?:(这|本|上|下)(?:个)?(?:星期|周)|(?:星期|周))?([一二三四五六日天1-7])"
+    r"|(今天|今日|今晚|明天|明早|明晚|昨天|昨日|昨晚|前天|后天)"
+)
+_WEEKDAY_PAIR_RE = re.compile(
+    rf"(?:{_DAY_SIDE_RE})\s*(?:到|至|-|~)\s*(?:{_DAY_SIDE_RE})"
+)
+
+
+def _weekday_range(text: str, today: dt.date) -> tuple[dt.date, dt.date] | None:
+    """“这周一到周五”“周一到今天”这类星期组合范围。
+
+    组合式解析，不是按词枚举：锚点（这/上/下周）定出周一，没锚点的一侧
+    继承另一侧的锚点，都没有则用今天所在的周；相对日按今天换算。
+    至少一侧是星期几，且整段须含“周/星期”二字，避免把“一到五”
+    这类数量词误读成星期。起点晚于终点时终点顺延一周，保证范围非空。
+
+    回归 2026-10-31：用户问“这周一到周五花了多少钱”，旧逻辑只认带
+    前缀的星期（这周一），裸“周五”不是单日提及，“到周五”被丢掉，
+    只算了周一一天，漏了周二到周五的 16 笔。
+    """
+    match = _WEEKDAY_PAIR_RE.search(text or "")
+    if not match:
+        return None
+    whole = match.group(0)
+    if "周" not in whole and "星期" not in whole:
+        return None
+    anchor1, week1, rel1, anchor2, week2, rel2 = match.groups()
+    if not week1 and not week2:
+        return None
+
+    def monday_of(anchor: str | None) -> dt.date:
+        monday = today - today.weekday() * DAY
+        if anchor == "上":
+            return monday - 7 * DAY
+        if anchor == "下":
+            return monday + 7 * DAY
+        return monday
+
+    base = monday_of(anchor1 or anchor2)
+
+    def side_date(anchor_side: str | None, week_side: str | None, rel_side: str | None) -> dt.date:
+        if week_side:
+            day_base = monday_of(anchor_side) if anchor_side else base
+            return day_base + _WEEKDAY_OFFSET[week_side] * DAY
+        return today + _RELATIVE_DAY_DELTA[rel_side] * DAY
+
+    start = side_date(anchor1, week1, rel1)
+    end = side_date(anchor2, week2, rel2)
+    if start > end:
+        end += 7 * DAY
+    return start, end
+
+
 def _period_start(text: str, today: dt.date) -> dt.date | None:
     """整段时期的起点：上个月/本周/今年这类没有具体到日的说法。"""
     if "上上个月" in text:
@@ -303,6 +363,12 @@ def resolve_range(text: str, today: dt.date) -> tuple[dt.date | None, dt.date | 
     to_now = _to_now_range(text, today)
     if to_now:
         return to_now
+
+    # 星期组合范围（这周一到周五 / 周一到今天）必须早于单日判断，否则
+    # _single_day 只取“周一”，把“到周五”丢掉，只算一天。
+    weekday_range = _weekday_range(text, today)
+    if weekday_range:
+        return weekday_range
 
     # 多日说法（昨天和今天 / 前天到今天）必须早于单日判断，否则 _single_day
     # 只取第一个词（昨天），把“两天合计”误算成一天——这正是截图里的 bug。
