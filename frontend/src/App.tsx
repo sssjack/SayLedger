@@ -6,11 +6,13 @@ import { BillsPanel } from './components/BillsPanel'
 import { ReportPanel } from './components/ReportPanel'
 import { MoneyPanel } from './components/MoneyPanel'
 import { MemosPanel } from './components/MemosPanel'
+import { CalendarPanel } from './components/CalendarPanel'
 import { UsersPanel } from './components/UsersPanel'
 import { Chart, TOOLTIP_STYLE } from './components/Chart'
 import { fmtMoney } from './utils'
 import {
   CategoryIcon,
+  IconCalendar,
   IconChart,
   IconList,
   IconLogout,
@@ -20,7 +22,7 @@ import { ICON_MAP } from './components/TransactionCard'
 import { APP_NAME, APP_TAGLINE } from './brand'
 import assistantAvatar from './assets/assistant-avatar.webp'
 
-type Tab = 'chat' | 'bills' | 'report' | 'plan' | 'memos'
+type Tab = 'chat' | 'bills' | 'report' | 'plan' | 'memos' | 'calendar'
 
 const SUGGESTIONS = [
   '午饭花了 28',
@@ -218,6 +220,7 @@ export default function App() {
               { key: 'chat', label: '对话', icon: IconSpark },
               { key: 'bills', label: '账单', icon: IconList },
               { key: 'report', label: '报告', icon: IconChart },
+              { key: 'calendar', label: '日历', icon: IconCalendar },
               { key: 'memos', label: '备忘', icon: IconList },
               { key: 'plan', label: '管理', icon: IconList },
             ] as const
@@ -366,6 +369,14 @@ export default function App() {
           </div>
         )}
 
+        {tab === 'calendar' && (
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+            <div className="mx-auto max-w-2xl px-4 py-4">
+              <CalendarPanel refreshKey={refreshKey} />
+            </div>
+          </div>
+        )}
+
         {tab === 'plan' && <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain"><div className="mx-auto max-w-2xl space-y-4 px-4 py-4">{me?.username === 'admin' && <UsersPanel />}{/* 管理页：预算与偏好是每个租户自己的，账号管理只给 admin */}<MoneyPanel categories={categoryNames} payments={paymentNames} refreshKey={refreshKey} onChanged={() => void syncLedger()} /></div></div>}
 
         {tab === 'chat' && (
@@ -387,6 +398,7 @@ export default function App() {
             { key: 'chat', label: '对话', icon: IconSpark },
             { key: 'bills', label: '账单', icon: IconList },
             { key: 'report', label: '报告', icon: IconChart },
+            { key: 'calendar', label: '日历', icon: IconCalendar },
             { key: 'memos', label: '备忘', icon: IconList },
             { key: 'plan', label: '管理', icon: IconList },
           ] as const

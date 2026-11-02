@@ -778,6 +778,83 @@ def list_transactions(user=Depends(current_user), db: Session = Depends(get_db),
     return {"items": [serialize(row) for row in rows[offset:offset+limit]], "total": len(rows), "stats": summarize(rows)}
 
 
+@app.get("/api/calendar")
+def calendar_month(month: str | None = None, user=Depends(current_user), db: Session = Depends(get_db)):
+    """月日历汇总：每一天的净支出（支出个人份额 − 退款个人份额）与收入（仅 income 类）。
+
+    只返回汇总数字，不返回明细；明细走 /api/calendar/day。金额口径与全站
+    个人净支出 / 真实收入一致：退款冲减当日支出，不计入收入。
+    """
+    today = now_local().date()
+    if month is None:
+        month = today.strftime("%Y-%m")
+    if not re.fullmatch(r"\d{4}-\d{2}", month or ""):
+        raise HTTPException(400, "month 格式应为 YYYY-MM")
+    try:
+        first = dt.date.fromisoformat(month + "-01")
+    except ValueError:
+        raise HTTPException(400, "month 格式应为 YYYY-MM")
+    first, last = month_range(first)
+    rows = load_transactions(db, user.id, {"start": str(first), "end": str(last)})
+    days: dict[str, dict[str, Any]] = {}
+    day = first
+    while day <= last:
+        days[str(day)] = {"date": str(day), "expense": Decimal(0), "income": Decimal(0), "count": 0}
+        day += dt.timedelta(days=1)
+    for row in rows:
+        key = row.occurred_at.strftime("%Y-%m-%d")
+        bucket = days.get(key)
+        if bucket is None:
+            continue
+        personal = row.personal_amount if row.personal_amount is not None else row.amount
+        if row.kind == "expense":
+            bucket["expense"] += personal
+        elif row.kind == "refund":
+            bucket["expense"] -= personal
+        elif row.kind == "income":
+            bucket["income"] += personal
+        bucket["count"] += 1
+    return {"month": month, "days": [
+        {"date": item["date"], "expense": float(item["expense"]),
+         "income": float(item["income"]), "count": item["count"]}
+        for item in days.values()
+    ]}
+
+
+@app.get("/api/calendar/day")
+def calendar_day(date: str, user=Depends(current_user), db: Session = Depends(get_db)):
+    """某一天的日历明细：当天全部账单 + 当天提醒。
+
+    提醒包含两类：当天触发的（next_trigger_at 在当天，含已响过的一次性提醒）
+    与当天已响过的循环提醒（last_sent_at 在当天，触发时间已推进到下一次）。
+    已取消的提醒不出现。
+    """
+    from app.memo import serialize_memo
+
+    try:
+        day = dt.date.fromisoformat(date)
+    except ValueError:
+        raise HTTPException(400, "date 格式应为 YYYY-MM-DD")
+    rows = load_transactions(db, user.id, {"start": str(day), "end": str(day)})
+    memos = list(db.scalars(select(Memo).where(
+        Memo.user_id == user.id, Memo.status != "cancelled")).all())
+
+    def memo_time(memo: Memo) -> str:
+        sent = memo.last_sent_at.strftime("%Y-%m-%d %H:%M") if memo.last_sent_at else ""
+        trigger = memo.next_trigger_at.strftime("%Y-%m-%d %H:%M") if memo.next_trigger_at else ""
+        return sent if sent.startswith(str(day)) else trigger
+
+    day_memos = [
+        memo for memo in memos
+        if (memo.next_trigger_at and memo.next_trigger_at.strftime("%Y-%m-%d") == str(day))
+        or (memo.last_sent_at and memo.last_sent_at.strftime("%Y-%m-%d") == str(day))
+    ]
+    day_memos.sort(key=memo_time)
+    return {"date": str(day),
+            "transactions": [serialize(row) for row in rows],
+            "memos": [serialize_memo(memo) for memo in day_memos]}
+
+
 @app.post("/api/transactions")
 def create_transaction(body: TransactionBody, user=Depends(current_user), db: Session = Depends(get_db)):
     created = create_transactions(db, user.id, [body.model_dump(exclude_none=True)], source="manual",

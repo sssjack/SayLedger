@@ -41,6 +41,12 @@ export const IconChart = (p: P) => (
   </svg>
 )
 
+export const IconCalendar = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M4 6.5h16M8 3.5v3M16 3.5v3M4.5 6.5v13a1 1 0 0 0 1 1h13a1 1 0 0 0 1-1v-13M8 11h.01M12 11h.01M16 11h.01M8 15h.01M12 15h.01M16 15h.01" />
+  </svg>
+)
+
 export const IconList = (p: P) => (
   <svg {...base(p)}>
     <path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01" />

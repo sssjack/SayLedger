@@ -72,6 +72,9 @@ export type Stats = {
   group_by: string
 }
 
+export type CalendarDay = { date: string; expense: number; income: number; count: number }
+export type CalendarDayDetail = { date: string; transactions: Transaction[]; memos: Memo[] }
+
 export type Memo = {
   id: number
   content: string
@@ -353,6 +356,10 @@ export const api = {
   updateMemo: (id: number, patch: { content?: string; trigger_at?: string; recurrence?: string; interval_days?: number; status?: string }) =>
     request<{ item: Memo }>(`/api/memos/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
   deleteMemo: (id: number) => request<{ ok: boolean }>(`/api/memos/${id}`, { method: 'DELETE' }),
+  calendar: (month: string) =>
+    request<{ month: string; days: CalendarDay[] }>(`/api/calendar?month=${encodeURIComponent(month)}`),
+  calendarDay: (date: string) =>
+    request<CalendarDayDetail>(`/api/calendar/day?date=${encodeURIComponent(date)}`),
   preferences: () => request<Preference>('/api/preferences'),
   savePreferences: (preference: Preference) => request<Preference>('/api/preferences', { method: 'PUT', body: JSON.stringify(preference) }),
 }
