@@ -69,6 +69,20 @@ def prepare_chat(db: Session, user_id: int, body: Any, *, exclude_current: bool 
     moment = now_local()
     if moment.date() != today:
         moment = dt.datetime.combine(today, moment.time())
+    if not safe_images:
+        # 语音开关走确定性解析，优先于翻页、备忘与模型：整句只是开关时直接回确认；
+        # 开关 + 真问题时先改模式，再用剥离后的文本继续正常流程。设置直接提交，
+        # 因为网页流程在 prepare_chat 后会 rollback，不能依赖外层提交。
+        from app.voice import parse_voice_toggle, set_voice_setting
+        action, new_text = parse_voice_toggle(text)
+        if action:
+            set_voice_setting(db, user_id, enabled=(action == "on"))
+            if new_text is None:
+                reply = ("好，以后我都用语音回答你。" if action == "on"
+                         else "好，改回文字了。")
+                return ChatPlan(text, safe_images, today, {"action": "clarify", "reply": reply},
+                                body.confirm_duplicate)
+            text = new_text
     pending = memo_mod.get_pending(db, user_id)
     dialogue = load_context(db, user_id, text, channel=channel, exclude_current=exclude_current,
                             today=today, pending=pending)
@@ -231,7 +245,9 @@ def apply_chat(db: Session, user_id: int, plan: ChatPlan, *, save_user: bool = T
     payload["channel"] = channel
     main.save_message(db, user_id, "assistant", reply, payload)
     db.flush()
-    return {"reply": reply, "payload": payload}
+    from app.voice import get_voice_setting
+    voice_enabled = get_voice_setting(db, user_id)["enabled"]
+    return {"reply": reply, "payload": payload, "voice_enabled": voice_enabled}
 
 
 def process_chat(body: Any, user_id: int, db: Session) -> dict[str, Any]:

@@ -259,7 +259,7 @@ export const api = {
   messages: () => request<{ messages: ChatMessage[] }>('/api/messages'),
   clearMessages: () => request<{ ok: boolean }>('/api/messages', { method: 'DELETE' }),
   chat: (text: string, imageIds: string[] = [], confirmDuplicate = false) =>
-    request<{ reply: string; payload: MessagePayload }>('/api/chat', {
+    request<{ reply: string; payload: MessagePayload; voice_enabled?: boolean }>('/api/chat', {
       method: 'POST',
       body: JSON.stringify({
         text,
@@ -360,6 +360,23 @@ export const api = {
     request<{ month: string; days: CalendarDay[] }>(`/api/calendar?month=${encodeURIComponent(month)}`),
   calendarDay: (date: string) =>
     request<CalendarDayDetail>(`/api/calendar/day?date=${encodeURIComponent(date)}`),
+  voice: () => request<{ enabled: boolean; voice: string }>('/api/voice'),
+  setVoice: (enabled: boolean) =>
+    request<{ enabled: boolean; voice: string }>('/api/voice', {
+      method: 'POST',
+      body: JSON.stringify({ enabled }),
+    }),
+  tts: async (text: string): Promise<string> => {
+    const res = await fetch(`${BASE}/api/tts`, {
+      credentials: 'include',
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text }),
+    })
+    if (res.status === 401) throw Object.assign(new Error('unauthorized'), { code: 401 })
+    if (!res.ok) throw new Error('语音合成失败')
+    return URL.createObjectURL(await res.blob())
+  },
   preferences: () => request<Preference>('/api/preferences'),
   savePreferences: (preference: Preference) => request<Preference>('/api/preferences', { method: 'PUT', body: JSON.stringify(preference) }),
 }

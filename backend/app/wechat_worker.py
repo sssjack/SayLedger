@@ -274,8 +274,27 @@ class WechatManager:
                 continue
             try:
                 context = json.loads(unseal(item["envelope"]))["context"]
-                await self.api.send(current["base"], current["token"], current["peer"], context,
-                                    item["client_id"], item["reply"])
+                sent = False
+                # 语音只给聊天回复：备忘推送与周报推送（kind 为 memo/weekly）保持文字，
+                # 且长回复不发语音。语音任何一步失败都改发文字，不丢回复。
+                payload = json.loads(item.get("payload_json") or "{}")
+                if payload.get("kind") not in ("memo", "weekly") and item["reply"]:
+                    from app.voice import (MAX_VOICE_CHARS, build_wechat_voice,
+                                           get_voice_enabled_for_user)
+                    enabled, voice = await asyncio.to_thread(get_voice_enabled_for_user, user_id)
+                    if enabled and len(item["reply"]) <= MAX_VOICE_CHARS:
+                        try:
+                            silk, playtime = await asyncio.to_thread(
+                                build_wechat_voice, item["reply"], voice)
+                            await self.api.send_voice(current["base"], current["token"],
+                                                      current["peer"], context, item["client_id"],
+                                                      silk, playtime, item["reply"])
+                            sent = True
+                        except Exception as exc:
+                            logger.warning("微信语音发送失败，改发文字（%s）", type(exc).__name__)
+                if not sent:
+                    await self.api.send(current["base"], current["token"], current["peer"], context,
+                                        item["client_id"], item["reply"])
                 await asyncio.to_thread(mark_sent, item["id"])
             except WechatError as exc:
                 await asyncio.to_thread(send_failed, item["id"], str(exc))

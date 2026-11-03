@@ -664,6 +664,43 @@ def chat(body: ChatBody, user=Depends(current_user), db: Session = Depends(get_d
     return process_chat(body, user.id, db)
 
 
+class VoiceBody(BaseModel):
+    text: str | None = None
+    enabled: bool | None = None
+    voice: str | None = None
+
+
+@app.post("/api/tts")
+def tts_api(body: VoiceBody, user=Depends(current_user), db: Session = Depends(get_db)):
+    """网页朗读：按账号的声音设置合成 mp3。回复本身最长 1000 字，2000 是安全上限。"""
+    from app.voice import MAX_TTS_CHARS, get_voice_setting, synthesize_mp3_sync
+
+    text = (body.text or "").strip()
+    if not text:
+        raise HTTPException(400, "没有要朗读的文字")
+    if len(text) > MAX_TTS_CHARS:
+        raise HTTPException(400, "文字太长，语音只支持 2000 字以内")
+    try:
+        audio = synthesize_mp3_sync(text, get_voice_setting(db, user.id)["voice"])
+    except Exception:
+        raise HTTPException(502, "语音合成失败，请稍后重试") from None
+    return Response(content=audio, media_type="audio/mpeg")
+
+
+@app.get("/api/voice")
+def get_voice_api(user=Depends(current_user), db: Session = Depends(get_db)):
+    from app.voice import get_voice_setting
+    return get_voice_setting(db, user.id)
+
+
+@app.post("/api/voice")
+def set_voice_api(body: VoiceBody, user=Depends(current_user), db: Session = Depends(get_db)):
+    from app.voice import EDGE_VOICES, set_voice_setting
+    if body.voice is not None and body.voice not in EDGE_VOICES:
+        raise HTTPException(400, "不支持的声音")
+    return set_voice_setting(db, user.id, enabled=body.enabled, voice=body.voice)
+
+
 # ---------------------------------------------------------------- 备忘录
 
 

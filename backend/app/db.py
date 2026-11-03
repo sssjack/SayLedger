@@ -108,6 +108,16 @@ class Preference(Base):
     rules_json: Mapped[str] = mapped_column(Text, default="{}")
 
 
+class VoiceSetting(Base):
+    """语音模式：按账号存，网页与微信共用；声音可换，默认晓伊。"""
+
+    __tablename__ = "voice_settings"
+
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    enabled: Mapped[int] = mapped_column(Integer, default=0)
+    voice: Mapped[str] = mapped_column(String(32), default="xiaoyi")
+
+
 class WechatBinding(Base):
     """微信账号和账本的绑定；凭证及轮询游标加密保存。"""
 

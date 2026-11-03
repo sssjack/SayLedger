@@ -222,7 +222,8 @@ def next_delivery(user_id: int, revision: str, *, state: str | None = None,
         if row is None:
             return None
         return {"id": row.id, "state": row.state, "reply": row.reply, "client_id": row.client_id,
-                "retry_at": row.retry_at, "envelope": row.envelope_cipher}
+                "retry_at": row.retry_at, "envelope": row.envelope_cipher,
+                "payload_json": row.payload_json}
 
 
 def mark_sent(delivery_id: int):

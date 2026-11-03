@@ -43,6 +43,9 @@ export default function App() {
   const [tab, setTab] = useState<Tab>('chat')
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [sending, setSending] = useState(false)
+  const [voiceEnabled, setVoiceEnabled] = useState(false)
+  const [voiceTapUrl, setVoiceTapUrl] = useState<string | null>(null)
+  const audioRef = useRef<HTMLAudioElement | null>(null)
   const [refreshKey, setRefreshKey] = useState(0)
   const [todayTotal, setTodayTotal] = useState(0)
   const [weekTotal, setWeekTotal] = useState(0)
@@ -53,10 +56,12 @@ export default function App() {
     try {
       const meData = await api.me()
       setMe(meData)
-      const [meta, history, stats] = await Promise.all([api.meta(), api.messages(), api.stats('week')])
+      const [meta, history, stats, voice] = await Promise.all([api.meta(), api.messages(), api.stats('week'),
+        api.voice().catch(() => ({ enabled: false, voice: 'xiaoyi' }))])
       setCategories(meta.categories)
       setPayments(meta.payments)
       setMessages(history.messages)
+      setVoiceEnabled(voice.enabled)
       setTodayTotal(stats.today_total)
       setWeekTotal(stats.current.total)
       setAuthed(true)
@@ -85,6 +90,37 @@ export default function App() {
     }
   }, [])
 
+  const playVoice = useCallback(async (text: string) => {
+    try {
+      const url = await api.tts(text)
+      if (audioRef.current) {
+        audioRef.current.pause()
+        if (audioRef.current.src.startsWith('blob:')) URL.revokeObjectURL(audioRef.current.src)
+      }
+      const audio = new Audio(url)
+      audioRef.current = audio
+      setVoiceTapUrl(null)
+      try {
+        await audio.play()
+      } catch {
+        // 浏览器拦截自动播放时留一个手动播放按钮，点一下就能听。
+        setVoiceTapUrl(url)
+      }
+    } catch {
+      /* 合成失败就不出声，文字回复还在 */
+    }
+  }, [])
+
+  const toggleVoice = useCallback(async () => {
+    try {
+      const result = await api.setVoice(!voiceEnabled)
+      setVoiceEnabled(result.enabled)
+      if (!result.enabled && audioRef.current) audioRef.current.pause()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '切换失败')
+    }
+  }, [voiceEnabled])
+
   const send = useCallback(
     async (text: string, imageIds: string[] = [], confirmDuplicate = false) => {
       if (sending) return
@@ -101,6 +137,8 @@ export default function App() {
       setSending(true)
       try {
         const result = await api.chat(text, imageIds, confirmDuplicate)
+        if (typeof result.voice_enabled === 'boolean') setVoiceEnabled(result.voice_enabled)
+        if (result.voice_enabled) void playVoice(result.reply)
         setMessages((prev) => [
           ...prev,
           {
@@ -135,7 +173,7 @@ export default function App() {
         setSending(false)
       }
     },
-    [refreshNumbers, sending],
+    [refreshNumbers, sending, playVoice],
   )
 
   const syncLedger = useCallback(async () => {
@@ -386,6 +424,32 @@ export default function App() {
                 <div className="rounded-lg bg-red-50 px-3 py-1.5 text-[11.5px] text-red-600">{error}</div>
               </div>
             )}
+            <div className="mx-auto flex w-full max-w-2xl items-center justify-between px-4 pb-1">
+              <span className="text-[11px] text-ink-400">
+                {voiceEnabled ? '语音模式开：回答会朗读出来' : '语音模式关'}
+              </span>
+              <div className="flex items-center gap-2">
+                {voiceTapUrl && (
+                  <button
+                    onClick={() => {
+                      const audio = new Audio(voiceTapUrl)
+                      audioRef.current = audio
+                      setVoiceTapUrl(null)
+                      void audio.play()
+                    }}
+                    className="rounded-full bg-ink-900 px-2.5 py-1.5 text-[11px] font-medium text-white"
+                  >
+                    播放语音
+                  </button>
+                )}
+                <button
+                  onClick={() => void toggleVoice()}
+                  className="rounded-full bg-ink-50 px-2.5 py-1.5 text-[11px] font-medium text-ink-600 hover:bg-ink-100"
+                >
+                  {voiceEnabled ? '语音：开' : '语音：关'}
+                </button>
+              </div>
+            </div>
             <Composer onSend={send} disabled={sending} />
           </div>
         )}

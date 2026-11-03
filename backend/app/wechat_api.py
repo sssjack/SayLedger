@@ -171,3 +171,56 @@ class WechatAPI:
             "message_type": 2, "message_state": 2, "context_token": context,
             "item_list": [{"type": 1, "text_item": {"text": text}}],
         }})
+
+    async def send_voice(self, base: str, token: str, peer: str, context: str, client_id: str,
+                         silk: bytes, playtime_ms: int, text: str):
+        """发微信语音：先 getuploadurl + AES 加密上传 CDN，再发一条含语音项和文字项的消息。
+
+        文字项一并发出是刻意保底：个别 Bot 身份的语音项可能被服务端静默丢弃，
+        文字在同一条消息里能保证用户至少收到回复。任何一步失败都抛 WechatError，
+        调用方改发纯文字，不丢回复。
+        """
+        from urllib.parse import quote
+
+        from cryptography.hazmat.primitives import padding as sym_padding
+        from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+
+        if not context:
+            raise WechatError("消息缺少回复上下文，请在微信里重新发送消息。")
+        key = secrets.token_bytes(16)
+        filekey = secrets.token_hex(16)
+        padder = sym_padding.PKCS7(128).padder()
+        cipher = Cipher(algorithms.AES(key), modes.ECB())
+        encryptor = cipher.encryptor()
+        encrypted = encryptor.update(padder.update(silk) + padder.finalize()) + encryptor.finalize()
+        data = await self.request("POST", "getuploadurl", base=base, token=token, body={
+            "filekey": filekey, "media_type": 4, "to_user_id": peer,
+            "rawsize": len(silk), "rawfilemd5": hashlib.md5(silk).hexdigest(),
+            "filesize": len(encrypted), "no_need_thumb": True, "aeskey": key.hex()})
+        upload_url = data.get("upload_full_url")
+        if not upload_url:
+            if not data.get("upload_param"):
+                raise WechatError("微信没有返回语音上传地址。")
+            upload_url = ("https://novac2c.cdn.weixin.qq.com/c2c/upload?encrypted_query_param="
+                          + quote(str(data["upload_param"]), safe="") + "&filekey=" + filekey)
+        try:
+            response = await self.client.post(
+                upload_url, content=encrypted,
+                headers={"Content-Type": "application/octet-stream"}, timeout=30)
+            response.raise_for_status()
+        except httpx.HTTPError:
+            raise WechatError("语音上传到微信 CDN 失败。") from None
+        param = response.headers.get("x-encrypted-param")
+        if not param:
+            raise WechatError("微信 CDN 没有返回语音下载参数。")
+        media = {"encrypt_query_param": param, "aes_key": base64.b64encode(key).decode()}
+        await self.request("POST", "sendmessage", base=base, token=token, body={"msg": {
+            "from_user_id": "", "to_user_id": peer, "client_id": client_id,
+            "message_type": 2, "message_state": 2, "context_token": context,
+            "item_list": [
+                {"type": 3, "voice_item": {"media": media, "encode_type": 4,
+                                           "sample_rate": 24000, "bits_per_sample": 16,
+                                           "playtime": playtime_ms, "text": text}},
+                {"type": 1, "text_item": {"text": text}},
+            ],
+        }})

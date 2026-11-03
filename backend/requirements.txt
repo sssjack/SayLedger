@@ -11,3 +11,5 @@ tzdata==2024.2
 cryptography==46.0.3
 qrcode==8.2
 pilk-nogil==0.4.3
+edge-tts==7.3.1
+miniaudio==1.71
