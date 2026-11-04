@@ -78,8 +78,14 @@ def prepare_chat(db: Session, user_id: int, body: Any, *, exclude_current: bool 
         if action:
             set_voice_setting(db, user_id, enabled=(action == "on"))
             if new_text is None:
-                reply = ("好，以后我都用语音回答你。" if action == "on"
-                         else "好，改回文字了。")
+                if action == "on" and channel == "wechat":
+                    # 微信端网关不投递 Bot 语音（2026-11-04 四种格式实测全都没收到），
+                    # 别让用户以为微信也能出声；网页端语音正常。
+                    reply = ("语音模式已开，但微信这边网关不投递语音消息，所以微信还是发文字；"
+                             "你在网页上聊就能听到语音。")
+                else:
+                    reply = ("好，以后我都用语音回答你。" if action == "on"
+                             else "好，改回文字了。")
                 return ChatPlan(text, safe_images, today, {"action": "clarify", "reply": reply},
                                 body.confirm_duplicate)
             text = new_text

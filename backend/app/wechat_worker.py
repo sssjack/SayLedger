@@ -15,6 +15,8 @@ from app.config import settings
 from app.db import SessionLocal, WechatBinding, WechatDelivery, WechatLogin, WechatWorker, utcnow
 from app.finance import lock_ledger
 from app.wechat_api import WechatAPI, WechatError, seal, trusted_base, unseal
+
+WECHAT_VOICE_DELIVERY = False
 from app.wechat_store import (binding_snapshot, fail_pending, ingest, mark_sent, next_delivery,
                               process_pending, reconcile_legacy_acknowledgements, send_failed, set_binding_error)
 
@@ -275,11 +277,14 @@ class WechatManager:
             try:
                 context = json.loads(unseal(item["envelope"]))["context"]
                 voice_done = False
-                # 语音只给聊天回复：备忘推送与周报推送（kind 为 memo/weekly）保持文字，
-                # 且长回复不发语音。语音单独成一条消息（与文字合一条会被网关 ret=-2 拒绝），
-                # 发完语音再单独发一条文字；语音任何一步失败都改发纯文字，不丢回复。
+                # 2026-11-04 实测结论：网关接受 Bot 语音（ret 0）但从不投递到手机。
+                # 四种字段组合全试过（基准 STX+EncodeType 4、encrypt_type 0、encrypt_type 1、
+                # 不带 text），网关全接受、手机一条都没收到；另有独立实测报告同样结论。
+                # 因此微信端不再尝试发语音，避免每条回复白白多花几秒合成上传；
+                # 网页端语音不受影响。哪天网关开始投递了，把下面开关改回 True 即可。
                 payload = json.loads(item.get("payload_json") or "{}")
-                if payload.get("kind") not in ("memo", "weekly") and item["reply"]:
+                if (WECHAT_VOICE_DELIVERY and payload.get("kind") not in ("memo", "weekly")
+                        and item["reply"]):
                     from app.voice import (MAX_VOICE_CHARS, build_wechat_voice,
                                            get_voice_enabled_for_user)
                     enabled, voice = await asyncio.to_thread(get_voice_enabled_for_user, user_id)
