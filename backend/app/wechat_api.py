@@ -174,11 +174,11 @@ class WechatAPI:
 
     async def send_voice(self, base: str, token: str, peer: str, context: str, client_id: str,
                          silk: bytes, playtime_ms: int, text: str):
-        """发微信语音：先 getuploadurl + AES 加密上传 CDN，再发一条含语音项和文字项的消息。
+        """发微信语音：先 getuploadurl + AES 加密上传 CDN，再发一条纯语音消息。
 
-        文字项一并发出是刻意保底：个别 Bot 身份的语音项可能被服务端静默丢弃，
-        文字在同一条消息里能保证用户至少收到回复。任何一步失败都抛 WechatError，
-        调用方改发纯文字，不丢回复。
+        注意：语音项必须单独成一条消息。实测语音项与文字项合在一条消息里会被网关
+        以 ret=-2 拒绝，而纯语音可以正常接受；文字由调用方另发一条，不丢回复。
+        任何一步失败都抛 WechatError，调用方改发纯文字。
         """
         from urllib.parse import quote
 
@@ -221,6 +221,5 @@ class WechatAPI:
                 {"type": 3, "voice_item": {"media": media, "encode_type": 4,
                                            "sample_rate": 24000, "bits_per_sample": 16,
                                            "playtime": playtime_ms, "text": text}},
-                {"type": 1, "text_item": {"text": text}},
             ],
         }})

@@ -274,9 +274,10 @@ class WechatManager:
                 continue
             try:
                 context = json.loads(unseal(item["envelope"]))["context"]
-                sent = False
+                voice_done = False
                 # 语音只给聊天回复：备忘推送与周报推送（kind 为 memo/weekly）保持文字，
-                # 且长回复不发语音。语音任何一步失败都改发文字，不丢回复。
+                # 且长回复不发语音。语音单独成一条消息（与文字合一条会被网关 ret=-2 拒绝），
+                # 发完语音再单独发一条文字；语音任何一步失败都改发纯文字，不丢回复。
                 payload = json.loads(item.get("payload_json") or "{}")
                 if payload.get("kind") not in ("memo", "weekly") and item["reply"]:
                     from app.voice import (MAX_VOICE_CHARS, build_wechat_voice,
@@ -289,10 +290,18 @@ class WechatManager:
                             await self.api.send_voice(current["base"], current["token"],
                                                       current["peer"], context, item["client_id"],
                                                       silk, playtime, item["reply"])
-                            sent = True
+                            voice_done = True
                         except Exception as exc:
                             logger.warning("微信语音发送失败，改发文字（%s）", type(exc).__name__)
-                if not sent:
+                if voice_done:
+                    # 语音已送达，文字是附赠的可读版；它失败也不应触发重发导致语音重复。
+                    # 两条消息的 client_id 必须不同，否则网关可能按标识去重掉第二条。
+                    try:
+                        await self.api.send(current["base"], current["token"], current["peer"],
+                                            context, item["client_id"] + "-text", item["reply"])
+                    except Exception as exc:
+                        logger.warning("微信语音已发，补发文字失败（%s）", type(exc).__name__)
+                else:
                     await self.api.send(current["base"], current["token"], current["peer"], context,
                                         item["client_id"], item["reply"])
                 await asyncio.to_thread(mark_sent, item["id"])
