@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api, KIND_LABELS, type CalendarDay, type CalendarDayDetail } from '../api'
+import { holidayOf, isHolidayStart } from '../holidays'
 import { fmtMoney } from '../utils'
 
 type Props = { refreshKey: number }
@@ -112,6 +113,7 @@ export function CalendarPanel({ refreshKey }: Props) {
 
   const [year, monthNum] = month.split('-').map(Number)
   const todayStr = today()
+  const selectedHoliday = selected ? holidayOf(selected) : undefined
 
   return (
     <div className="space-y-4">
@@ -143,6 +145,12 @@ export function CalendarPanel({ refreshKey }: Props) {
             </button>
           )}
         </div>
+        <div className="mt-1 text-center text-[11px] text-ink-400">
+          <span className="mr-1 rounded bg-red-100 px-1 py-px font-medium text-red-600">春节</span>
+          法定节假日
+          <span className="ml-3 mr-1 rounded bg-ink-100 px-1 py-px text-ink-500">班</span>
+          调休上班
+        </div>
 
         <div className="mt-3 grid grid-cols-7 gap-1 text-center text-[11px] text-ink-400">
           {['一', '二', '三', '四', '五', '六', '日'].map((w) => <div key={w}>{w}</div>)}
@@ -159,6 +167,14 @@ export function CalendarPanel({ refreshKey }: Props) {
                   const lines = dayLines(dayMap.get(date))
                   const isToday = date === todayStr
                   const isSelected = date === selected
+                  const holiday = holidayOf(date)
+                  const holidayLabel = holiday
+                    ? holiday.kind === 'workday'
+                      ? '班'
+                      : isHolidayStart(date)
+                        ? holiday.name
+                        : '休'
+                    : ''
                   return (
                     <button
                       key={di}
@@ -174,6 +190,17 @@ export function CalendarPanel({ refreshKey }: Props) {
                       >
                         {day}
                       </span>
+                      {holiday && (
+                        <span
+                          className={`mt-0.5 rounded px-1 text-[10px] leading-tight ${
+                            holiday.kind === 'holiday'
+                              ? 'bg-red-100 font-medium text-red-600'
+                              : 'bg-ink-100 text-ink-500'
+                          }`}
+                        >
+                          {holidayLabel}
+                        </span>
+                      )}
                       {lines.spend > 0 && (
                         <span className="mt-0.5 truncate font-num text-[10px] leading-tight text-red-500">
                           -{fmtMoney(lines.spend)}
@@ -198,6 +225,18 @@ export function CalendarPanel({ refreshKey }: Props) {
         <div className="card p-4">
           <div className="text-[13.5px] font-semibold text-ink-900">
             {selected === todayStr ? '今天' : selected} · 账单与提醒
+            {selectedHoliday && (
+              <span
+                className={`ml-2 rounded px-1.5 py-px text-[11.5px] font-medium ${
+                  selectedHoliday.kind === 'holiday'
+                    ? 'bg-red-100 text-red-600'
+                    : 'bg-ink-100 text-ink-500'
+                }`}
+              >
+                {selectedHoliday.name}
+                {selectedHoliday.kind === 'holiday' ? ' · 放假' : ''}
+              </span>
+            )}
           </div>
           {loadingDay ? (
             <div className="py-4 text-center text-[12px] text-ink-400">加载中…</div>
