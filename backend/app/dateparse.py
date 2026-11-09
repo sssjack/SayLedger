@@ -20,7 +20,29 @@ _OTHER_DAY_WORDS = (
     "上周", "下周", "本周", "上星期", "下星期", "本星期",
     "上月", "下月", "本月", "上个月", "下个月", "这个月",
 )
-_EXPLICIT_DATE_RE = re.compile(r"\d{4}[-/年]\d{1,2}[-/月]\d{1,2}|(?<!\d)\d{1,2}月\d{1,2}[日号]")
+_EXPLICIT_DATE_RE = re.compile(
+    r"\d{4}[-/年]\d{1,2}[-/月]\d{1,2}|(?<!\d)\d{1,2}月\d{1,2}[日号]"
+    r"|(?:^|[，,、；;。\s和与及到至])\d{1,2}[./-]\d{1,2}(?![\d元折%.])"
+)
+
+# “11.7”“11-7”“11/7”这类不带年的月日写法（也可带“11.7号”）。
+# 必须用分隔符定界，避免把金额小数误认成日期：前面须是开头、分隔符
+# 或连接词（和/与/及/到/至，如“11.7和11.8”里的第二个日期），后面不能
+# 是数字、元、折、% 或小数点——“62.6元”“3.5元”“花了12.5元”都不会
+# 被认成日期，而句首的“11.7 高速费…”可以。
+_MD_RE = re.compile(r"(?:^|[，,、；;。\s和与及到至])(\d{1,2})[./-](\d{1,2})(?![\d元折%.])")
+
+
+def _month_day_noyear(text: str, today: dt.date) -> dt.date | None:
+    """解析不带年的“月.日”写法；解析不出或日期不合法返回 None。"""
+    if not text:
+        return None
+    for match in _MD_RE.finditer(text):
+        try:
+            return dt.date(today.year, int(match.group(1)), int(match.group(2)))
+        except ValueError:
+            continue
+    return None
 
 
 def mentions_today_only(text: str) -> bool:
@@ -64,6 +86,12 @@ def resolve_relative(text: str, today: dt.date) -> dt.date | None:
             return dt.date(today.year, int(short.group(1)), int(short.group(2)))
         except ValueError:
             pass
+
+    # 不带年的月日写法：“11.7 高速费…”——记账时模型常只把日期写在第一笔，
+    # 其余笔靠整句话的上下文兜底继承，这一步认不出，整句的日期就丢了。
+    month_day = _month_day_noyear(text, today)
+    if month_day:
+        return month_day
 
     if "大前天" in text:
         return today - 3 * DAY
@@ -170,6 +198,10 @@ def _single_day(text: str, today: dt.date) -> dt.date | None:
         except ValueError:
             pass
 
+    month_day = _month_day_noyear(text, today)
+    if month_day:
+        return month_day
+
     return None
 
 
@@ -179,6 +211,7 @@ _DAY_MENTION_RE = re.compile(
     r"\d{4}[-/年]\d{1,2}[-/月]\d{1,2}[日号]?"
     r"|(?:上上个月|上个?月|这个月|本月)\s*\d{1,2}\s*[日号]"
     r"|(?<!\d)\d{1,2}月\d{1,2}[日号]"
+    r"|(?:^|[，,、；;。\s和与及到至])\d{1,2}[./-]\d{1,2}(?![\d元折%.])"
     r"|(?:上|这|本)(?:个)?(?:星期|周)[一二三四五六日天1-7]"
     r"|大前天|前天|昨天|昨日|昨晚|今天|今日|今晚|今早|明天|明早|明晚|后天"
     r"|[0-9一二两三四五六七八九十]+\s*天前"
