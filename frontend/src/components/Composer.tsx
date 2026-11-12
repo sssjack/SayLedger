@@ -180,7 +180,7 @@ export function Composer({ onSend, disabled }: Props) {
             onClick={() => fileRef.current?.click()}
             disabled={uploading}
             title="发小票图片"
-            className="mb-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-ink-400 transition hover:bg-ink-50 hover:text-ink-700 disabled:opacity-40"
+            className="mb-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-ink-500 transition hover:bg-ink-50 hover:text-ink-700 disabled:opacity-40"
           >
             {uploading ? (
               <span className="h-4 w-4 animate-spin rounded-full border-2 border-ink-200 border-t-ink-700" />
@@ -199,14 +199,15 @@ export function Composer({ onSend, disabled }: Props) {
             onFocus={() => setFocused(true)}
             onBlur={() => setFocused(false)}
             placeholder={listening ? '正在听你说…' : '说一句，比如「午饭花了28」'}
-            className="max-h-[132px] min-h-[34px] flex-1 resize-none bg-transparent px-1 py-[7px] text-[14.5px] leading-snug text-ink-900 outline-none placeholder:text-ink-300"
+            /* 16px 是 iOS Safari 不触发聚焦自动放大的下限，调小会让整页被顶飞 */
+            className="max-h-[132px] min-h-[34px] flex-1 resize-none bg-transparent px-1 py-[7px] text-[16px] leading-snug text-ink-900 outline-none placeholder:text-ink-400"
           />
 
           <button
             onClick={toggleMic}
             title="语音记账"
             className={`relative mb-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition ${
-              listening ? 'bg-red-500 text-white' : 'text-ink-400 hover:bg-ink-50 hover:text-ink-700'
+              listening ? 'bg-red-500 text-white' : 'text-ink-500 hover:bg-ink-50 hover:text-ink-700'
             }`}
           >
             {listening ? <IconStop width={16} height={16} /> : <IconMic width={19} height={19} />}
@@ -229,7 +230,7 @@ export function Composer({ onSend, disabled }: Props) {
           </button>
         </div>
 
-        <div className="mt-1.5 hidden items-center justify-center gap-3 text-[11px] text-ink-300 sm:flex">
+        <div className="mt-1.5 hidden items-center justify-center gap-3 text-[11px] text-ink-400 sm:flex">
           <span>Enter 发送 · Shift+Enter 换行</span>
           <span className="text-ink-200">|</span>
           <span>支持语音、小票照片</span>

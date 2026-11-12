@@ -93,7 +93,7 @@ export function TransactionCard({ tx, categories, payments, onUpdate, onDelete, 
 
   if (removing) {
     return (
-      <div className="rounded-xl border border-dashed border-ink-200 px-3 py-2.5 text-[12px] text-ink-400">
+      <div className="rounded-xl border border-dashed border-ink-200 px-3 py-2.5 text-[12px] text-ink-500">
         已删除
       </div>
     )
@@ -113,7 +113,7 @@ export function TransactionCard({ tx, categories, payments, onUpdate, onDelete, 
             ))}
           </div>
           <div className="flex items-center gap-2">
-            <span className="shrink-0 text-[12px] text-ink-400">金额</span>
+            <span className="shrink-0 text-[12px] text-ink-500">金额</span>
             <input
               autoFocus
               inputMode="decimal"
@@ -155,7 +155,7 @@ export function TransactionCard({ tx, categories, payments, onUpdate, onDelete, 
           </div>
 
           <div className="flex flex-wrap items-center gap-1">
-            <span className="mr-1 shrink-0 text-[11px] text-ink-400">付款</span>
+            <span className="mr-1 shrink-0 text-[11px] text-ink-500">付款</span>
             {payments.map((item) => (
               <button
                 key={item}
@@ -173,14 +173,14 @@ export function TransactionCard({ tx, categories, payments, onUpdate, onDelete, 
             value={remark}
             onChange={(event) => setRemark(event.target.value)}
             placeholder="备注（和谁、是否报销、发票号…）"
-            className="w-full rounded-lg border border-ink-200 px-2 py-1 text-[12px] outline-none placeholder:text-ink-300 focus:border-ink-900"
+            className="w-full rounded-lg border border-ink-200 px-2 py-1 text-[12px] outline-none placeholder:text-ink-400 focus:border-ink-900"
           />
 
           <div className="flex items-center justify-end gap-2 pt-0.5">
-            <button onClick={remove} className="rounded-full p-1.5 text-ink-400 hover:bg-red-50 hover:text-red-500">
+            <button onClick={remove} className="rounded-full p-1.5 text-ink-500 hover:bg-red-50 hover:text-red-500">
               <IconTrash width={15} height={15} />
             </button>
-            <button onClick={() => setEditing(false)} className="rounded-full p-1.5 text-ink-400 hover:bg-ink-50">
+            <button onClick={() => setEditing(false)} className="rounded-full p-1.5 text-ink-500 hover:bg-ink-50">
               <IconClose width={15} height={15} />
             </button>
             <button
@@ -205,9 +205,9 @@ export function TransactionCard({ tx, categories, payments, onUpdate, onDelete, 
               <span className="truncate text-[13px] font-medium text-ink-900">
                 {tx.merchant || tx.note || tx.category}
               </span>
-              {tx.merchant && tx.note && <span className="truncate text-[11px] text-ink-400">{tx.note}</span>}
+              {tx.merchant && tx.note && <span className="truncate text-[11px] text-ink-500">{tx.note}</span>}
             </span>
-            <span className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px] text-ink-400">
+            <span className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px] text-ink-500">
               <span>{tx.category}</span>
               <span className="rounded bg-ink-50 px-1 text-ink-600">{KIND_LABELS[tx.kind] || '支出'}</span>
               {tx.counterparty && <span>{tx.counterparty}</span>}
@@ -240,8 +240,8 @@ export function TransactionCard({ tx, categories, payments, onUpdate, onDelete, 
               )}
             </span>
             {tx.remark && (
-              <span className="mt-1 block truncate text-[11px] text-ink-400">
-                <span className="text-ink-300">备注 </span>
+              <span className="mt-1 block truncate text-[11px] text-ink-500">
+                <span className="text-ink-400">备注 </span>
                 {tx.remark}
               </span>
             )}
@@ -249,7 +249,7 @@ export function TransactionCard({ tx, categories, payments, onUpdate, onDelete, 
           <span className={`shrink-0 font-num text-[15px] font-semibold tabular-nums ${tx.cashFlow > 0 ? 'text-emerald-600' : 'text-ink-900'}`}>
             {tx.kind === 'transfer' ? '↔' : tx.cashFlow > 0 ? '+' : '−'}{fmtMoney(tx.amount)}
           </span>
-          <IconChevron width={14} height={14} className="shrink-0 text-ink-300 opacity-0 transition group-hover:opacity-100" />
+          <IconChevron width={14} height={14} className="shrink-0 text-ink-400 opacity-0 transition group-hover:opacity-100" />
         </button>
       )}
       {!editing && (tx.recoverableAmount > 0 || tx.refundedAmount > 0) && ['expense','lend','borrow','deposit'].includes(tx.kind) && <div className="flex flex-wrap gap-x-3 gap-y-1 border-t border-ink-50 px-3 py-2 text-[11px] text-ink-500">

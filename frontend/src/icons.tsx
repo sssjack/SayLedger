@@ -53,6 +53,19 @@ export const IconList = (p: P) => (
   </svg>
 )
 
+export const IconBell = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M18 9a6 6 0 1 0-12 0c0 4-1.5 5.5-1.5 5.5h15S18 13 18 9ZM10 18a2 2 0 0 0 4 0" />
+  </svg>
+)
+
+export const IconUser = (p: P) => (
+  <svg {...base(p)}>
+    <circle cx="12" cy="8" r="3.6" />
+    <path d="M4.5 20a7.5 7.5 0 0 1 15 0" />
+  </svg>
+)
+
 export const IconClose = (p: P) => (
   <svg {...base(p)}>
     <path d="m6 6 12 12M18 6 6 18" />

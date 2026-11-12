@@ -63,14 +63,14 @@ export function MemosPanel({ refreshKey, onChanged }: Props) {
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="text-[13px] font-medium text-ink-900">{memo.content}</span>
-          {!!memo.stageDay && <span className="text-[10.5px] text-ink-400">计划第{memo.stageDay}天</span>}
+          {!!memo.stageDay && <span className="text-[11px] text-ink-500">计划第{memo.stageDay}天</span>}
           {memo.recurrenceLabel && (
-            <span className="rounded-full bg-indigo-50 px-1.5 py-0.5 text-[10.5px] text-indigo-600">{memo.recurrenceLabel}</span>
+            <span className="rounded-full bg-indigo-50 px-1.5 py-0.5 text-[11px] text-indigo-600">{memo.recurrenceLabel}</span>
           )}
-          {memo.status === 'done' && <span className="rounded-full bg-emerald-50 px-1.5 py-0.5 text-[10.5px] text-emerald-600">已提醒</span>}
-          {memo.status === 'cancelled' && <span className="rounded-full bg-ink-100 px-1.5 py-0.5 text-[10.5px] text-ink-400">已取消</span>}
+          {memo.status === 'done' && <span className="rounded-full bg-emerald-50 px-1.5 py-0.5 text-[11px] text-emerald-600">已提醒</span>}
+          {memo.status === 'cancelled' && <span className="rounded-full bg-ink-100 px-1.5 py-0.5 text-[11px] text-ink-500">已取消</span>}
         </div>
-        <div className="mt-0.5 text-[11.5px] text-ink-400">
+        <div className="mt-0.5 text-[12px] text-ink-500">
           {memo.status === 'active' ? `下一次提醒：${memo.nextTriggerAt}` : `提醒时间：${memo.nextTriggerAt}`}
           {memo.pushStatus && PUSH_LABELS[memo.pushStatus] ? ` · ${PUSH_LABELS[memo.pushStatus]}` : ''}
         </div>
@@ -82,7 +82,7 @@ export function MemosPanel({ refreshKey, onChanged }: Props) {
         </div>
       )}
       {memo.status !== 'active' && (
-        <button disabled={busy} onClick={() => void run(() => api.deleteMemo(memo.id))} className="shrink-0 rounded-lg bg-white px-2 py-1 text-[11px] text-ink-400 ring-1 ring-ink-100 disabled:opacity-40">删除</button>
+        <button disabled={busy} onClick={() => void run(() => api.deleteMemo(memo.id))} className="shrink-0 rounded-lg bg-white px-2 py-1 text-[11px] text-ink-500 ring-1 ring-ink-100 disabled:opacity-40">删除</button>
       )}
     </div>
   )
@@ -91,16 +91,16 @@ export function MemosPanel({ refreshKey, onChanged }: Props) {
     <div className="space-y-4">
       <div className="px-1">
         <h1 className="text-lg font-semibold text-ink-900">备忘录</h1>
-        <p className="mt-1 text-[12px] leading-relaxed text-ink-400">
+        <p className="mt-1 text-[12px] leading-relaxed text-ink-500">
           也可以直接在对话里说「下周三提醒我交房租」「每周三下午3点提醒我交水电费」，到点我会来喊你；绑了微信还会在微信里提醒。
         </p>
       </div>
       {error && <div role="alert" className="rounded-xl bg-red-50 p-3 text-[12px] text-red-600">{error}<button onClick={() => void load()} className="ml-3 underline">重新加载</button></div>}
-      {loading && <div className="text-[12px] text-ink-400">正在同步…</div>}
+      {loading && <div className="text-[12px] text-ink-500">正在同步…</div>}
       <section className="card space-y-3 p-4">
         <h2 className="text-[14px] font-medium">待提醒</h2>
         {active.map(renderItem)}
-        {!loading && active.length === 0 && <p className="text-[12px] text-ink-400">还没有待提醒的备忘，去对话里说一句，或者在下面手动加一条。</p>}
+        {!loading && active.length === 0 && <p className="text-[12px] text-ink-500">还没有待提醒的备忘，去对话里说一句，或者在下面手动加一条。</p>}
         <form
           className="grid grid-cols-2 gap-2 border-t border-ink-50 pt-3"
           onSubmit={(event) => {
@@ -129,7 +129,7 @@ export function MemosPanel({ refreshKey, onChanged }: Props) {
               onChange={(event) => setIntervalDays(Number(event.target.value))} className={`${input} w-20`} /> 天重复一次
           </label>}
         </form>
-        <p className="text-[11px] text-ink-400">每隔几天会从首次提醒日期开始循环；也可以在聊天中查询或修改整份计划。</p>
+        <p className="text-[11px] text-ink-500">每隔几天会从首次提醒日期开始循环；也可以在聊天中查询或修改整份计划。</p>
       </section>
       {finished.length > 0 && (
         <section className="card space-y-3 p-4">

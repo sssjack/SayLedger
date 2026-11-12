@@ -145,18 +145,18 @@ export function CalendarPanel({ refreshKey }: Props) {
             </button>
           )}
         </div>
-        <div className="mt-1 text-center text-[11px] text-ink-400">
+        <div className="mt-1 text-center text-[11px] text-ink-500">
           <span className="mr-1 rounded bg-red-100 px-1 py-px font-medium text-red-600">春节</span>
           法定节假日
           <span className="ml-3 mr-1 rounded bg-ink-100 px-1 py-px text-ink-500">班</span>
           调休上班
         </div>
 
-        <div className="mt-3 grid grid-cols-7 gap-1 text-center text-[11px] text-ink-400">
+        <div className="mt-3 grid grid-cols-7 gap-1 text-center text-[11px] text-ink-500">
           {['一', '二', '三', '四', '五', '六', '日'].map((w) => <div key={w}>{w}</div>)}
         </div>
         {loadingMonth ? (
-          <div className="py-8 text-center text-[12px] text-ink-400">加载中…</div>
+          <div className="py-8 text-center text-[12px] text-ink-500">加载中…</div>
         ) : (
           <div className="mt-1 space-y-1">
             {weeks.map((week, wi) => (
@@ -184,7 +184,7 @@ export function CalendarPanel({ refreshKey }: Props) {
                       }`}
                     >
                       <span
-                        className={`flex h-5 w-5 items-center justify-center rounded-full text-[12.5px] ${
+                        className={`flex h-5 w-5 items-center justify-center rounded-full text-[13px] ${
                           isToday ? 'bg-ink-900 font-semibold text-white' : 'text-ink-800'
                         }`}
                       >
@@ -192,7 +192,7 @@ export function CalendarPanel({ refreshKey }: Props) {
                       </span>
                       {holiday && (
                         <span
-                          className={`mt-0.5 rounded px-1 text-[10px] leading-tight ${
+                          className={`mt-0.5 rounded px-1 text-[11px] leading-tight ${
                             holiday.kind === 'holiday'
                               ? 'bg-red-100 font-medium text-red-600'
                               : 'bg-ink-100 text-ink-500'
@@ -202,12 +202,12 @@ export function CalendarPanel({ refreshKey }: Props) {
                         </span>
                       )}
                       {lines.spend > 0 && (
-                        <span className="mt-0.5 truncate font-num text-[10px] leading-tight text-red-500">
+                        <span className="mt-0.5 truncate font-num text-[11px] leading-tight text-red-500">
                           -{fmtMoney(lines.spend)}
                         </span>
                       )}
                       {lines.earn > 0 && (
-                        <span className="truncate font-num text-[10px] leading-tight text-emerald-600">
+                        <span className="truncate font-num text-[11px] leading-tight text-emerald-600">
                           +{fmtMoney(lines.earn)}
                         </span>
                       )}
@@ -223,11 +223,11 @@ export function CalendarPanel({ refreshKey }: Props) {
 
       {selected ? (
         <div className="card p-4">
-          <div className="text-[13.5px] font-semibold text-ink-900">
+          <div className="text-[14px] font-semibold text-ink-900">
             {selected === todayStr ? '今天' : selected} · 账单与提醒
             {selectedHoliday && (
               <span
-                className={`ml-2 rounded px-1.5 py-px text-[11.5px] font-medium ${
+                className={`ml-2 rounded px-1.5 py-px text-[12px] font-medium ${
                   selectedHoliday.kind === 'holiday'
                     ? 'bg-red-100 text-red-600'
                     : 'bg-ink-100 text-ink-500'
@@ -239,13 +239,13 @@ export function CalendarPanel({ refreshKey }: Props) {
             )}
           </div>
           {loadingDay ? (
-            <div className="py-4 text-center text-[12px] text-ink-400">加载中…</div>
+            <div className="py-4 text-center text-[12px] text-ink-500">加载中…</div>
           ) : detail ? (
             <div className="mt-3 space-y-4">
               <div>
-                <div className="text-[11.5px] font-medium text-ink-400">当天账单</div>
+                <div className="text-[12px] font-medium text-ink-500">当天账单</div>
                 {detail.transactions.length === 0 ? (
-                  <div className="mt-1 text-[12.5px] text-ink-400">这天还没有账单</div>
+                  <div className="mt-1 text-[13px] text-ink-500">这天还没有账单</div>
                 ) : (
                   <ul className="mt-1.5 divide-y divide-ink-100">
                     {detail.transactions.map((tx) => {
@@ -256,7 +256,7 @@ export function CalendarPanel({ refreshKey }: Props) {
                             <div className="truncate text-[13px] text-ink-800">
                               {tx.merchant || tx.note || tx.category}
                             </div>
-                            <div className="truncate text-[11px] text-ink-400">
+                            <div className="truncate text-[11px] text-ink-500">
                               {tx.category}
                               {tx.paymentMethod ? ` · ${tx.paymentMethod}` : ''}
                               {tx.occurredAt ? ` · ${tx.occurredAt.slice(11, 16)}` : ''}
@@ -270,7 +270,7 @@ export function CalendarPanel({ refreshKey }: Props) {
                             >
                               {signed !== 0 ? fmtMoney(signed, true) : fmtMoney(tx.personalAmount ?? tx.amount)}
                             </span>
-                            <div className="text-[11px] text-ink-400">{KIND_LABELS[tx.kind] ?? tx.kind}</div>
+                            <div className="text-[11px] text-ink-500">{KIND_LABELS[tx.kind] ?? tx.kind}</div>
                           </div>
                         </li>
                       )
@@ -279,9 +279,9 @@ export function CalendarPanel({ refreshKey }: Props) {
                 )}
               </div>
               <div>
-                <div className="text-[11.5px] font-medium text-ink-400">当天提醒</div>
+                <div className="text-[12px] font-medium text-ink-500">当天提醒</div>
                 {detail.memos.length === 0 ? (
-                  <div className="mt-1 text-[12.5px] text-ink-400">这天没有提醒</div>
+                  <div className="mt-1 text-[13px] text-ink-500">这天没有提醒</div>
                 ) : (
                   <ul className="mt-1.5 divide-y divide-ink-100">
                     {detail.memos.map((memo) => {
@@ -290,13 +290,13 @@ export function CalendarPanel({ refreshKey }: Props) {
                         <li key={memo.id} className="flex items-baseline justify-between gap-3 py-1.5">
                           <div className="min-w-0">
                             <div className="truncate text-[13px] text-ink-800">{memo.content}</div>
-                            <div className="truncate text-[11px] text-ink-400">
+                            <div className="truncate text-[11px] text-ink-500">
                               {memoTime(memo, selected)} · {memo.recurrenceLabel}
                             </div>
                           </div>
                           <span
-                            className={`shrink-0 text-[11.5px] font-medium ${
-                              fired ? 'text-ink-400' : 'text-amber-600'
+                            className={`shrink-0 text-[12px] font-medium ${
+                              fired ? 'text-ink-500' : 'text-amber-600'
                             }`}
                           >
                             {fired ? '已提醒' : '待提醒'}
@@ -311,7 +311,7 @@ export function CalendarPanel({ refreshKey }: Props) {
           ) : null}
         </div>
       ) : (
-        <div className="card p-4 text-center text-[12.5px] text-ink-400">
+        <div className="card p-4 text-center text-[13px] text-ink-500">
           点一下某一天，下面会列出当天的账单和提醒
         </div>
       )}

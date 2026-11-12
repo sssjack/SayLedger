@@ -1,38 +1,53 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { api, type Category, type ChatMessage, type PaymentMethod } from './api'
 import { Composer } from './components/Composer'
 import { MessageBubble } from './components/MessageBubble'
 import { BillsPanel } from './components/BillsPanel'
-import { ReportPanel } from './components/ReportPanel'
 import { MoneyPanel } from './components/MoneyPanel'
 import { MemosPanel } from './components/MemosPanel'
 import { CalendarPanel } from './components/CalendarPanel'
 import { UsersPanel } from './components/UsersPanel'
-import { Chart, TOOLTIP_STYLE } from './components/Chart'
 import { fmtMoney } from './utils'
 import {
   CategoryIcon,
+  IconBell,
   IconCalendar,
   IconChart,
   IconList,
   IconLogout,
   IconSpark,
+  IconUser,
 } from './icons'
 import { ICON_MAP } from './components/TransactionCard'
 import { APP_NAME, APP_TAGLINE } from './brand'
 import assistantAvatar from './assets/assistant-avatar.webp'
 
-type Tab = 'chat' | 'bills' | 'report' | 'plan' | 'memos' | 'calendar'
+type Tab = 'chat' | 'bills' | 'report' | 'memos' | 'me'
+
+/** 报告页是唯一用到 ECharts 的地方，单独切出去，首屏和记账链路不再下载图表库。 */
+const ReportPanel = lazy(() => import('./components/ReportPanel').then((mod) => ({ default: mod.ReportPanel })))
+
+/**
+ * 导航只有 5 个入口。日历并进账单（同一份流水换个看法），
+ * 原来的「管理」拆开：预算与往来在「我的」页，账号与退出登录也在那里。
+ */
+const NAV: { key: Tab; label: string; icon: (props: { width?: number; height?: number }) => JSX.Element }[] = [
+  { key: 'chat', label: '对话', icon: IconSpark },
+  { key: 'bills', label: '账单', icon: IconList },
+  { key: 'report', label: '报告', icon: IconChart },
+  { key: 'memos', label: '备忘', icon: IconBell },
+  { key: 'me', label: '我的', icon: IconUser },
+]
 
 const SUGGESTIONS = [
   '午饭花了 28',
   '今天工资到账 8500',
-  '聚餐付了300，含我3个人AA',
+  '聚餐300，3人AA',
   '这个月餐饮预算1500',
   '还有谁没还我',
   '我昨天花了哪些钱',
   '明天下午3点提醒我开会',
-  '每周三下午3点提醒我交水电费',
+  '每周三提醒交水电费',
 ]
 
 export default function App() {
@@ -41,6 +56,7 @@ export default function App() {
   const [categories, setCategories] = useState<Category[]>([])
   const [payments, setPayments] = useState<PaymentMethod[]>([])
   const [tab, setTab] = useState<Tab>('chat')
+  const [billsView, setBillsView] = useState<'list' | 'calendar'>('list')
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [sending, setSending] = useState(false)
   const [voiceEnabled, setVoiceEnabled] = useState(false)
@@ -227,6 +243,15 @@ export default function App() {
     [syncLedger],
   )
 
+  const logout = useCallback(async () => {
+    try {
+      await api.logout()
+    } catch {
+      // 服务端没响应也要让用户退回登录页，否则会卡在账本里出不去
+    }
+    setAuthed(false)
+  }, [])
+
   if (authed === null) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -248,28 +273,19 @@ export default function App() {
           <Logo />
           <div>
             <div className="text-[14px] font-semibold tracking-tight text-ink-900">{APP_NAME}</div>
-            <div className="text-[11px] text-ink-400">{APP_TAGLINE}</div>
+            <div className="text-[11px] text-ink-500">{APP_TAGLINE}</div>
           </div>
         </div>
 
-        <nav className="mt-7 space-y-1">
-          {(
-            [
-              { key: 'chat', label: '对话', icon: IconSpark },
-              { key: 'bills', label: '账单', icon: IconList },
-              { key: 'report', label: '报告', icon: IconChart },
-              { key: 'calendar', label: '日历', icon: IconCalendar },
-              { key: 'memos', label: '备忘', icon: IconList },
-              { key: 'plan', label: '管理', icon: IconList },
-            ] as const
-          ).map((item) => {
+        <nav aria-label="主导航" className="mt-7 space-y-1">
+          {NAV.map((item) => {
             const active = tab === item.key
             const Icon = item.icon
             return (
               <button
                 key={item.key}
                 onClick={() => setTab(item.key)}
-                className={`flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-[13.5px] font-medium transition ${
+                className={`flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-[14px] font-medium transition ${
                   active ? 'bg-white text-ink-900 shadow-card' : 'text-ink-500 hover:bg-white/60 hover:text-ink-800'
                 }`}
               >
@@ -282,18 +298,18 @@ export default function App() {
 
         <div className="mt-6 space-y-3">
           <div className="card p-4">
-            <div className="text-[11.5px] text-ink-400">今天个人净支出</div>
+            <div className="text-[12px] text-ink-500">今天个人净支出</div>
             <div className="mt-0.5 font-num text-[22px] font-semibold tracking-tight tabular-nums">
               ¥{fmtMoney(todayTotal)}
             </div>
-            <div className="mt-3 flex items-center justify-between border-t border-ink-50 pt-2.5 text-[11.5px]">
-              <span className="text-ink-400">近 7 天</span>
+            <div className="mt-3 flex items-center justify-between border-t border-ink-50 pt-2.5 text-[12px]">
+              <span className="text-ink-500">近 7 天</span>
               <span className="font-num font-medium tabular-nums text-ink-700">¥{fmtMoney(weekTotal)}</span>
             </div>
           </div>
 
           <div className="card p-4">
-            <div className="mb-2.5 text-[11.5px] text-ink-400">分类</div>
+            <div className="mb-2.5 text-[12px] text-ink-500">分类</div>
             <div className="flex flex-wrap gap-1.5">
               {categories.slice(0, 8).map((item) => (
                 <span
@@ -311,14 +327,11 @@ export default function App() {
 
         <div className="mt-auto pt-4">
           <button
-            onClick={async () => {
-              await api.logout()
-              setAuthed(false)
-            }}
-            className="flex items-center gap-2 rounded-lg px-3 py-2 text-[12px] text-ink-400 transition hover:bg-white hover:text-ink-700"
+            onClick={() => setTab('me')}
+            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-[12px] text-ink-500 transition hover:bg-white hover:text-ink-800"
           >
-            <IconLogout width={14} height={14} />
-            退出登录
+            <IconUser width={14} height={14} />
+            <span className="truncate">{me?.username ?? '我的账号'}</span>
           </button>
         </div>
       </aside>
@@ -328,15 +341,15 @@ export default function App() {
         <header className="z-10 flex shrink-0 items-center gap-3 border-b border-ink-50 bg-white/90 px-4 py-3 backdrop-blur lg:hidden">
           <Logo size={26} />
           <div className="min-w-0 flex-1">
-            <div className="text-[13.5px] font-semibold leading-tight tracking-tight">{APP_NAME}</div>
-            <div className="text-[10.5px] text-ink-400">今天 ¥{fmtMoney(todayTotal)}</div>
+            <div className="text-[14px] font-semibold leading-tight tracking-tight">{APP_NAME}</div>
+            <div className="text-[11px] text-ink-500">今天 ¥{fmtMoney(todayTotal)}</div>
           </div>
         </header>
 
         {tab === 'chat' && (
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
             <div className="mx-auto w-full max-w-2xl px-4 pb-2 pt-5">
-              <div className="mb-4 flex items-center justify-between gap-2 text-[11px] text-ink-400"><span>收支 · 退款 · AA · 报销 · 预算 · 备忘提醒</span><button disabled={sending} onClick={() => void send('撤销上一步', [])} className="rounded-full bg-ink-50 px-2.5 py-1.5 text-ink-500 hover:bg-ink-100 disabled:opacity-40">撤销上一步</button></div>
+              <div className="mb-4 flex items-center justify-between gap-2 text-[11px] text-ink-500"><span>收支 · 退款 · AA · 报销 · 预算 · 备忘提醒</span><button disabled={sending} onClick={() => void send('撤销上一步', [])} className="rounded-full bg-ink-50 px-2.5 py-1.5 text-ink-500 hover:bg-ink-100 disabled:opacity-40">撤销上一步</button></div>
               {messages.length === 0 ? (
                 <EmptyState
                   todayTotal={todayTotal}
@@ -381,12 +394,39 @@ export default function App() {
         {tab === 'bills' && (
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
             <div className="mx-auto max-w-2xl px-4 py-4">
-              <BillsPanel
-                categories={categoryNames}
-                payments={payments}
-                refreshKey={refreshKey}
-                onChanged={() => void refreshNumbers()}
-              />
+              <div className="mb-3 flex items-center justify-between gap-2 px-1">
+                <span className="text-[15px] font-semibold text-ink-900">账单</span>
+                <div className="inline-flex shrink-0 rounded-full bg-ink-100 p-0.5 text-[12px] font-medium">
+                  <button
+                    onClick={() => setBillsView('list')}
+                    className={`flex items-center gap-1 rounded-full px-2.5 py-1 transition ${
+                      billsView === 'list' ? 'bg-white text-ink-900 shadow-sm' : 'text-ink-500'
+                    }`}
+                  >
+                    <IconList width={13} height={13} />
+                    流水
+                  </button>
+                  <button
+                    onClick={() => setBillsView('calendar')}
+                    className={`flex items-center gap-1 rounded-full px-2.5 py-1 transition ${
+                      billsView === 'calendar' ? 'bg-white text-ink-900 shadow-sm' : 'text-ink-500'
+                    }`}
+                  >
+                    <IconCalendar width={13} height={13} />
+                    日历
+                  </button>
+                </div>
+              </div>
+              {billsView === 'list' ? (
+                <BillsPanel
+                  categories={categoryNames}
+                  payments={payments}
+                  refreshKey={refreshKey}
+                  onChanged={() => void refreshNumbers()}
+                />
+              ) : (
+                <CalendarPanel refreshKey={refreshKey} />
+              )}
             </div>
           </div>
         )}
@@ -394,7 +434,9 @@ export default function App() {
         {tab === 'report' && (
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
             <div className="mx-auto max-w-2xl px-4 py-4">
-              <ReportPanel refreshKey={refreshKey} />
+              <Suspense fallback={<div className="py-16 text-center text-[13px] text-ink-500">正在加载报告…</div>}>
+                <ReportPanel refreshKey={refreshKey} />
+              </Suspense>
             </div>
           </div>
         )}
@@ -407,25 +449,26 @@ export default function App() {
           </div>
         )}
 
-        {tab === 'calendar' && (
+        {tab === 'me' && (
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-            <div className="mx-auto max-w-2xl px-4 py-4">
-              <CalendarPanel refreshKey={refreshKey} />
+            <div className="mx-auto max-w-2xl space-y-4 px-4 py-4">
+              <AccountCard username={me?.username ?? ''} onLogout={() => void logout()} />
+              <MoneyPanel categories={categoryNames} payments={paymentNames} refreshKey={refreshKey} onChanged={() => void syncLedger()} />
+              {/* 账号管理只给 admin；预算与记账习惯是每个租户自己的 */}
+              {me?.username === 'admin' && <UsersPanel />}
             </div>
           </div>
         )}
-
-        {tab === 'plan' && <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain"><div className="mx-auto max-w-2xl space-y-4 px-4 py-4">{me?.username === 'admin' && <UsersPanel />}{/* 管理页：预算与偏好是每个租户自己的，账号管理只给 admin */}<MoneyPanel categories={categoryNames} payments={paymentNames} refreshKey={refreshKey} onChanged={() => void syncLedger()} /></div></div>}
 
         {tab === 'chat' && (
           <div className="shrink-0">
             {error && (
               <div className="mx-auto mb-1 w-full max-w-2xl px-4">
-                <div className="rounded-lg bg-red-50 px-3 py-1.5 text-[11.5px] text-red-600">{error}</div>
+                <div className="rounded-lg bg-red-50 px-3 py-1.5 text-[12px] text-red-600">{error}</div>
               </div>
             )}
             <div className="mx-auto flex w-full max-w-2xl items-center justify-between px-4 pb-1">
-              <span className="text-[11px] text-ink-400">
+              <span className="text-[11px] text-ink-500">
                 {voiceEnabled ? '语音模式开：回答会朗读出来' : '语音模式关'}
               </span>
               <div className="flex items-center gap-2">
@@ -456,28 +499,20 @@ export default function App() {
       </main>
 
       {/* 移动端底部导航 */}
-      <nav className="z-20 flex shrink-0 items-center justify-around border-t border-ink-100 bg-white/95 px-2 pb-[max(6px,env(safe-area-inset-bottom))] pt-1.5 backdrop-blur lg:hidden">
-        {(
-          [
-            { key: 'chat', label: '对话', icon: IconSpark },
-            { key: 'bills', label: '账单', icon: IconList },
-            { key: 'report', label: '报告', icon: IconChart },
-            { key: 'calendar', label: '日历', icon: IconCalendar },
-            { key: 'memos', label: '备忘', icon: IconList },
-            { key: 'plan', label: '管理', icon: IconList },
-          ] as const
-        ).map((item) => {
+      <nav aria-label="底部导航" className="z-20 flex shrink-0 items-center justify-around border-t border-ink-100 bg-white/95 px-2 pb-[max(6px,env(safe-area-inset-bottom))] pt-1.5 backdrop-blur lg:hidden">
+        {NAV.map((item) => {
           const active = tab === item.key
           const Icon = item.icon
           return (
             <button
               key={item.key}
               onClick={() => setTab(item.key)}
-              className={`flex flex-1 flex-col items-center gap-0.5 py-1.5 text-[10.5px] font-medium transition ${
-                active ? 'text-ink-900' : 'text-ink-400'
+              aria-current={active ? 'page' : undefined}
+              className={`flex flex-1 flex-col items-center gap-0.5 py-1.5 text-[11px] font-medium transition ${
+                active ? 'text-ink-900' : 'text-ink-500'
               }`}
             >
-              <Icon width={19} height={19} />
+              <Icon width={20} height={20} />
               {item.label}
             </button>
           )
@@ -505,7 +540,7 @@ function EmptyState({ todayTotal, onPick }: { todayTotal: number; onPick: (text:
       <h1 className="mt-4 text-center text-[19px] font-semibold tracking-tight text-ink-900">
         今天花了多少？
       </h1>
-      <p className="mx-auto mt-1.5 max-w-[300px] text-center text-[13px] leading-relaxed text-ink-400">
+      <p className="mx-auto mt-1.5 max-w-[300px] text-center text-[13px] leading-relaxed text-ink-500">
         说一句话、发一张小票照片，我来帮你记、帮你分类、帮你算清楚。
       </p>
 
@@ -522,7 +557,7 @@ function EmptyState({ todayTotal, onPick }: { todayTotal: number; onPick: (text:
             onClick={() => onPick(text)}
             className="group flex items-center gap-2.5 rounded-xl border border-ink-100 bg-white px-3.5 py-3 text-left transition hover:border-ink-200 hover:shadow-card"
           >
-            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-ink-50 text-ink-400 transition group-hover:bg-ink-900 group-hover:text-white">
+            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-ink-50 text-ink-500 transition group-hover:bg-ink-900 group-hover:text-white">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
                 <path d="M12 5v14M5 12h14" />
               </svg>
@@ -549,34 +584,47 @@ function MiniWeekly() {
   if (series.length === 0 || total === 0) return null
 
   const max = Math.max(...series.map((item) => item.value), 1)
-  const option = {
-    grid: { left: 0, right: 0, top: 6, bottom: 0 },
-    tooltip: {
-      ...TOOLTIP_STYLE,
-      trigger: 'item',
-      formatter: (p: { name: string; value: number }) => `${p.name}&nbsp;&nbsp;<b>¥${fmtMoney(p.value)}</b>`,
-    },
-    xAxis: { type: 'category', show: false, data: series.map((item) => item.date.slice(5)) },
-    yAxis: { type: 'value', show: false, max: max * 1.15 },
-    series: [
-      {
-        type: 'bar',
-        data: series.map((item) => item.value),
-        itemStyle: { color: '#d5d9e2', borderRadius: [4, 4, 0, 0] },
-        emphasis: { itemStyle: { color: '#4f46e5' } },
-        barWidth: '46%',
-      },
-    ],
-  }
 
+  // 纯 CSS 柱状图：这 7 根柱子以前会把整个 ECharts（约 180KB gzip）拖进首屏
   return (
     <div className="mx-auto mt-8 max-w-[420px] rounded-2xl border border-ink-100 bg-white p-4">
       <div className="flex items-baseline justify-between">
-        <span className="text-[11.5px] text-ink-400">近 7 天</span>
+        <span className="text-[12px] text-ink-500">近 7 天</span>
         <span className="font-num text-[13px] font-semibold tabular-nums">¥{fmtMoney(total)}</span>
       </div>
-      <Chart option={option} height={54} className="mt-2" />
+      <div className="mt-2 flex h-[54px] items-end gap-1.5">
+        {series.map((item) => (
+          <div key={item.date} className="group flex-1" title={`${item.date.slice(5)}　¥${fmtMoney(item.value)}`}>
+            <div
+              className="w-full rounded-t bg-ink-200 transition-colors group-hover:bg-accent"
+              style={{ height: `${Math.max(3, Math.round((item.value / max) * 54))}px` }}
+            />
+          </div>
+        ))}
+      </div>
     </div>
+  )
+}
+
+/** 「我的」页顶部：当前账号 + 退出登录。移动端以前没有这个入口，只能清缓存。 */
+function AccountCard({ username, onLogout }: { username: string; onLogout: () => void }) {
+  return (
+    <section className="card flex items-center gap-3 p-4">
+      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-ink-100 text-ink-600">
+        <IconUser width={20} height={20} />
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-[14px] font-medium text-ink-900">{username || '未登录'}</div>
+        <div className="mt-0.5 text-[12px] text-ink-500">每个账号只能看到自己的账单、备忘与微信绑定</div>
+      </div>
+      <button
+        onClick={onLogout}
+        className="flex shrink-0 items-center gap-1.5 rounded-full border border-ink-200 px-3 py-1.5 text-[12px] font-medium text-ink-600 transition hover:border-ink-300 hover:text-ink-900"
+      >
+        <IconLogout width={14} height={14} />
+        退出登录
+      </button>
+    </section>
   )
 }
 
@@ -616,7 +664,7 @@ function Login({ onDone }: { onDone: () => void }) {
       <form onSubmit={submit} className="w-full max-w-[340px] animate-rise">
         <img src={assistantAvatar} alt={APP_NAME} className="mx-auto h-12 w-12 rounded-full object-cover shadow-float" />
         <h1 className="mt-5 text-center text-[19px] font-semibold tracking-tight">{APP_NAME}</h1>
-        <p className="mt-1.5 text-center text-[12.5px] text-ink-400">
+        <p className="mt-1.5 text-center text-[13px] text-ink-500">
           {mode === 'register' ? '只需要账号和密码，账号不重复就能注册' : '输入账号和密码，进入你的账本'}
         </p>
 
@@ -626,27 +674,27 @@ function Login({ onDone }: { onDone: () => void }) {
           value={username}
           onChange={(event) => setUsername(event.target.value)}
           placeholder="账号"
-          className="mt-6 w-full rounded-xl border border-ink-200 bg-white px-3.5 py-2.5 text-center text-[14px] outline-none transition placeholder:text-ink-300 focus:border-ink-900"
+          className="mt-6 w-full rounded-xl border border-ink-200 bg-white px-3.5 py-2.5 text-center text-[14px] outline-none transition placeholder:text-ink-400 focus:border-ink-900"
         />
         <input
           type="password"
           value={password}
           onChange={(event) => setPassword(event.target.value)}
           placeholder="密码"
-          className="mt-3 w-full rounded-xl border border-ink-200 bg-white px-3.5 py-2.5 text-center text-[14px] tracking-widest outline-none transition placeholder:tracking-normal placeholder:text-ink-300 focus:border-ink-900"
+          className="mt-3 w-full rounded-xl border border-ink-200 bg-white px-3.5 py-2.5 text-center text-[14px] tracking-widest outline-none transition placeholder:tracking-normal placeholder:text-ink-400 focus:border-ink-900"
         />
         {error && <div className="mt-2 text-center text-[12px] text-red-500">{error}</div>}
         <button
           type="submit"
           disabled={busy || !username.trim() || !password.trim()}
-          className="mt-3 w-full rounded-xl bg-ink-900 py-2.5 text-[13.5px] font-medium text-white transition hover:bg-ink-800 disabled:opacity-40"
+          className="mt-3 w-full rounded-xl bg-ink-900 py-2.5 text-[14px] font-medium text-white transition hover:bg-ink-800 disabled:opacity-40"
         >
           {busy ? '验证中…' : mode === 'register' ? '注册并进入' : '进入'}
         </button>
         <button
           type="button"
           onClick={() => switchMode(mode === 'register' ? 'login' : 'register')}
-          className="mt-3 w-full text-center text-[12.5px] text-ink-500 underline-offset-2 hover:text-ink-900 hover:underline"
+          className="mt-3 w-full text-center text-[13px] text-ink-500 underline-offset-2 hover:text-ink-900 hover:underline"
         >
           {mode === 'register' ? '已有账号？去登录' : '没有账号？注册一个'}
         </button>

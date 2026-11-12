@@ -46,7 +46,7 @@ export function UsersPanel() {
 
   return (
     <div className="card p-4">
-      <div className="text-[13.5px] font-semibold">账号管理</div>
+      <div className="text-[14px] font-semibold">账号管理</div>
       <p className="mt-1 text-[12px] leading-relaxed text-ink-500">
         访客也可以在登录页自行注册；管理员也可以在这里建号。每个账号登录后只能看到自己的账单、备忘和微信绑定。
       </p>
@@ -56,14 +56,14 @@ export function UsersPanel() {
           value={username}
           onChange={(event) => setUsername(event.target.value)}
           placeholder="新账号，字母数字下划线横线"
-          className="min-w-0 flex-1 rounded-xl border border-ink-200 bg-white px-3 py-2 text-[13px] outline-none placeholder:text-ink-300 focus:border-ink-900"
+          className="min-w-0 flex-1 rounded-xl border border-ink-200 bg-white px-3 py-2 text-[13px] outline-none placeholder:text-ink-400 focus:border-ink-900"
         />
         <input
           type="password"
           value={password}
           onChange={(event) => setPassword(event.target.value)}
           placeholder="密码，至少 6 位"
-          className="min-w-0 flex-1 rounded-xl border border-ink-200 bg-white px-3 py-2 text-[13px] outline-none placeholder:text-ink-300 focus:border-ink-900"
+          className="min-w-0 flex-1 rounded-xl border border-ink-200 bg-white px-3 py-2 text-[13px] outline-none placeholder:text-ink-400 focus:border-ink-900"
         />
         <button
           type="submit"
@@ -80,9 +80,9 @@ export function UsersPanel() {
           <li key={user.id} className="flex items-center justify-between text-[13px] text-ink-700">
             <span>
               {user.username}
-              {user.username === 'admin' && <span className="ml-1.5 text-[11px] text-ink-400">管理员</span>}
+              {user.username === 'admin' && <span className="ml-1.5 text-[11px] text-ink-500">管理员</span>}
             </span>
-            <span className="text-[11.5px] text-ink-400">{user.created_at ? user.created_at.slice(0, 10) : ''}</span>
+            <span className="text-[12px] text-ink-500">{user.created_at ? user.created_at.slice(0, 10) : ''}</span>
           </li>
         ))}
       </ul>

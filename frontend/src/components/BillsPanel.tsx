@@ -124,13 +124,13 @@ export function BillsPanel({ categories, payments, refreshKey, onChanged }: Prop
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between px-1"><span className="text-[14px] font-medium">收支账单</span><div className="flex gap-3 text-[12px] text-ink-500"><a href={`${BASE}/api/export?${exportParams}`} download>导出 CSV</a><button onClick={() => setShowEntry(v => !v)}>{showEntry ? '收起' : '手动记一笔'}</button></div></div>
+      <div className="flex items-center justify-end gap-3 px-1 text-[12px] text-ink-500"><a href={`${BASE}/api/export?${exportParams}`} download>导出 CSV</a><button onClick={() => setShowEntry(v => !v)}>{showEntry ? '收起' : '手动记一笔'}</button></div>
       {showEntry && <QuickEntry categories={categories} payments={payments.map(p => p.name)} onDone={() => { setShowEntry(false); void load(); onChanged() }} />}
       {error && <div role="alert" className="rounded-xl bg-red-50 p-3 text-[12px] text-red-600">{error}</div>}
       <div className="card p-4">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
-            <div className="flex items-center gap-1.5 text-[12px] text-ink-400">
+            <div className="flex items-center gap-1.5 text-[12px] text-ink-500">
               <span className="truncate">
                 {mode === 'custom' ? `${rangeStart.slice(5)} 至 ${rangeEnd.slice(5)}` : labelFor(anchor, mode)}
               </span>
@@ -138,7 +138,7 @@ export function BillsPanel({ categories, payments, refreshKey, onChanged }: Prop
             </div>
             <div className="mt-1 flex items-baseline gap-1">
               <span className="font-num text-3xl font-semibold tracking-tight tabular-nums">¥{fmtMoney(total)}</span>
-              <span className="text-[12px] text-ink-400">{count} 笔</span>
+              <span className="text-[12px] text-ink-500">{count} 笔</span>
             </div>
           </div>
           <div className="inline-flex shrink-0 rounded-full bg-ink-100 p-0.5">
@@ -146,7 +146,7 @@ export function BillsPanel({ categories, payments, refreshKey, onChanged }: Prop
               <button
                 key={item.key}
                 onClick={() => changeMode(item.key)}
-                className={`rounded-full px-2 py-1 text-[11.5px] font-medium transition ${
+                className={`rounded-full px-2 py-1 text-[12px] font-medium transition ${
                   mode === item.key ? 'bg-white text-ink-900 shadow-sm' : 'text-ink-500'
                 }`}
               >
@@ -160,14 +160,14 @@ export function BillsPanel({ categories, payments, refreshKey, onChanged }: Prop
           <div className="mt-2 flex items-center justify-end gap-1">
             <button
               onClick={() => setAnchor((value) => shift(value, mode, -1))}
-              className="flex h-7 w-7 items-center justify-center rounded-full text-ink-400 hover:bg-ink-50 hover:text-ink-800"
+              className="flex h-7 w-7 items-center justify-center rounded-full text-ink-500 hover:bg-ink-50 hover:text-ink-800"
             >
               <IconChevron width={15} height={15} className="rotate-180" />
             </button>
             <button
               onClick={() => setAnchor((value) => shift(value, mode, 1))}
               disabled={isCurrent}
-              className="flex h-7 w-7 items-center justify-center rounded-full text-ink-400 hover:bg-ink-50 hover:text-ink-800 disabled:opacity-30"
+              className="flex h-7 w-7 items-center justify-center rounded-full text-ink-500 hover:bg-ink-50 hover:text-ink-800 disabled:opacity-30"
             >
               <IconChevron width={15} height={15} />
             </button>
@@ -181,7 +181,7 @@ export function BillsPanel({ categories, payments, refreshKey, onChanged }: Prop
               onChange={(event) => setRangeStart(event.target.value)}
               className="min-w-0 flex-1 rounded-lg border border-ink-200 px-2 py-1.5 text-[12px] text-ink-800 outline-none focus:border-ink-900"
             />
-            <span className="shrink-0 text-[11px] text-ink-300">至</span>
+            <span className="shrink-0 text-[11px] text-ink-400">至</span>
             <input
               type="date"
               value={rangeEnd}
@@ -197,24 +197,24 @@ export function BillsPanel({ categories, payments, refreshKey, onChanged }: Prop
           value={keyword}
           onChange={(event) => setKeyword(event.target.value)}
           placeholder="搜商户、备注、商品名"
-          className="mt-3 w-full rounded-xl bg-ink-50 px-3 py-2 text-[13px] text-ink-800 outline-none placeholder:text-ink-300 focus:bg-ink-100/70"
+          className="mt-3 w-full rounded-xl bg-ink-50 px-3 py-2 text-[13px] text-ink-800 outline-none placeholder:text-ink-400 focus:bg-ink-100/70"
         />
 
-        <div className="mt-3 grid grid-cols-2 gap-3 border-t border-ink-50 pt-3 text-[12px]"><div className="text-ink-400">收入 <span className="ml-1 font-num text-emerald-600">¥{fmtMoney(stats?.income ?? 0)}</span></div><div className="text-ink-400">收支结余 <span className="ml-1 font-num text-ink-800">¥{fmtMoney(stats?.balance ?? 0)}</span></div></div>
+        <div className="mt-3 grid grid-cols-2 gap-3 border-t border-ink-50 pt-3 text-[12px]"><div className="text-ink-500">收入 <span className="ml-1 font-num text-emerald-600">¥{fmtMoney(stats?.income ?? 0)}</span></div><div className="text-ink-500">收支结余 <span className="ml-1 font-num text-ink-800">¥{fmtMoney(stats?.balance ?? 0)}</span></div></div>
         <div className="mt-3 flex flex-wrap gap-2">
           <select aria-label="账务类型筛选" value={kindFilter} onChange={e => setKindFilter(e.target.value)} className="rounded-lg bg-ink-50 px-2 py-1.5 text-[12px]"><option value="">全部类型</option>{Object.entries(KIND_LABELS).map(([key,label]) => <option key={key} value={key}>{label}</option>)}</select>
           <select aria-label="付款方式筛选" value={paymentFilter} onChange={e => setPaymentFilter(e.target.value)} className="rounded-lg bg-ink-50 px-2 py-1.5 text-[12px]"><option value="">全部付款方式</option>{payments.map(p => <option key={p.name}>{p.name}</option>)}</select>
           <label className="flex items-center gap-1 text-[12px] text-ink-500"><input type="checkbox" checked={pendingOnly} onChange={e => setPendingOnly(e.target.checked)} />只看待结清</label>
         </div>
-        <p className="mt-2 text-[11px] leading-relaxed text-ink-400">净支出按个人承担减退款计算；转账、借还款及回款分别记录。统计包含筛选范围内全部账单。</p>
+        <p className="mt-2 text-[11px] leading-relaxed text-ink-500">净支出按个人承担减退款计算；转账、借还款及回款分别记录。统计包含筛选范围内全部账单。</p>
       </div>
 
-      {loading && <div className="py-10 text-center text-[13px] text-ink-300">加载中…</div>}
+      {loading && <div className="py-10 text-center text-[13px] text-ink-400">加载中…</div>}
 
       {!loading && groups.length === 0 && (
         <div className="py-14 text-center">
-          <div className="text-[13px] text-ink-400">这段时间还没有记录</div>
-          <div className="mt-1 text-[12px] text-ink-300">回到对话说一句「午饭 28」试试</div>
+          <div className="text-[13px] text-ink-500">这段时间还没有记录</div>
+          <div className="mt-1 text-[12px] text-ink-400">回到对话说一句「午饭 28」试试</div>
         </div>
       )}
 
@@ -222,7 +222,7 @@ export function BillsPanel({ categories, payments, refreshKey, onChanged }: Prop
         <div key={group.date} className="space-y-2">
           <div className="flex items-baseline justify-between px-1">
             <span className="text-[12px] font-medium text-ink-500">{fmtDateLabel(group.date)}</span>
-            <span className="font-num text-[11px] tabular-nums text-ink-300">
+            <span className="font-num text-[11px] tabular-nums text-ink-400">
               ¥{fmtMoney(group.items.reduce((sum, item) => sum + item.expenseAmount, 0))}
             </span>
           </div>

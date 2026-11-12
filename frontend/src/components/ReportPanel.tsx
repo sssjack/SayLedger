@@ -182,7 +182,7 @@ export function ReportPanel({ refreshKey }: Props) {
   }, [report])
 
   if (error && !report) {
-    return <div className="py-16 text-center text-[13px] text-ink-400">{error}</div>
+    return <div className="py-16 text-center text-[13px] text-ink-500">{error}</div>
   }
 
   const changePeriod = (next: Period) => {
@@ -211,17 +211,17 @@ export function ReportPanel({ refreshKey }: Props) {
           <div className="flex min-w-0 items-center gap-1">
             <button
               onClick={() => setAnchor((a) => shiftAnchor(a, period, -1))}
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-ink-400 transition hover:bg-white hover:text-ink-800"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-ink-500 transition hover:bg-white hover:text-ink-800"
             >
               <IconChevron width={16} height={16} className="rotate-180" />
             </button>
-            <span className="min-w-0 truncate text-center text-[12.5px] font-medium text-ink-700">
+            <span className="min-w-0 truncate text-center text-[13px] font-medium text-ink-700">
               {report?.label ?? '…'}
             </span>
             <button
               onClick={() => setAnchor((a) => shiftAnchor(a, period, 1))}
               disabled={isCurrent}
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-ink-400 transition hover:bg-white hover:text-ink-800 disabled:opacity-30"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-ink-500 transition hover:bg-white hover:text-ink-800 disabled:opacity-30"
             >
               <IconChevron width={16} height={16} />
             </button>
@@ -236,16 +236,16 @@ export function ReportPanel({ refreshKey }: Props) {
             value={rangeStart}
             max={rangeEnd}
             onChange={(event) => setRangeStart(event.target.value)}
-            className="rounded-lg border border-ink-200 px-2.5 py-1.5 text-[12.5px] text-ink-800 outline-none focus:border-ink-900"
+            className="rounded-lg border border-ink-200 px-2.5 py-1.5 text-[13px] text-ink-800 outline-none focus:border-ink-900"
           />
-          <span className="text-[12px] text-ink-300">至</span>
+          <span className="text-[12px] text-ink-400">至</span>
           <input
             type="date"
             value={rangeEnd}
             min={rangeStart}
             max={todayISO()}
             onChange={(event) => setRangeEnd(event.target.value)}
-            className="rounded-lg border border-ink-200 px-2.5 py-1.5 text-[12.5px] text-ink-800 outline-none focus:border-ink-900"
+            className="rounded-lg border border-ink-200 px-2.5 py-1.5 text-[13px] text-ink-800 outline-none focus:border-ink-900"
           />
           <div className="ml-auto flex gap-1">
             {[
@@ -275,15 +275,15 @@ export function ReportPanel({ refreshKey }: Props) {
         </div>
       )}
 
-      {loading && !report && <div className="py-16 text-center text-[13px] text-ink-300">正在汇总…</div>}
+      {loading && !report && <div className="py-16 text-center text-[13px] text-ink-400">正在汇总…</div>}
 
       {report && (
         <>
           <div className="card overflow-hidden">
             <div className="px-4 pt-4">
               <div className="flex items-baseline justify-between">
-                <span className="text-[12px] text-ink-400">个人净支出</span>
-                <span className="text-[11px] text-ink-400">{report.label}</span>
+                <span className="text-[12px] text-ink-500">个人净支出</span>
+                <span className="text-[11px] text-ink-500">{report.label}</span>
               </div>
               <div className="mt-1.5 flex items-end justify-between">
                 <div className="flex items-baseline gap-1.5">
@@ -301,7 +301,7 @@ export function ReportPanel({ refreshKey }: Props) {
                     </span>
                   )}
                 </div>
-                <div className="mb-0.5 text-right text-[11px] leading-relaxed text-ink-400">
+                <div className="mb-0.5 text-right text-[11px] leading-relaxed text-ink-500">
                   <div>{report.stats.count} 笔</div>
                   <div>均 ¥{fmtMoney(report.stats.average)}</div>
                 </div>
@@ -312,10 +312,10 @@ export function ReportPanel({ refreshKey }: Props) {
           </div>
 
           <div className="grid grid-cols-2 gap-3">
-            <div className="card p-4"><div className="text-[11px] text-ink-400">真实收入</div><div className="mt-1 font-num text-xl font-semibold text-emerald-600">¥{fmtMoney(report.stats.income ?? 0)}</div></div>
-            <div className="card p-4"><div className="text-[11px] text-ink-400">收支结余</div><div className="mt-1 font-num text-xl font-semibold text-ink-900">¥{fmtMoney(report.stats.balance ?? 0)}</div></div>
+            <div className="card p-4"><div className="text-[11px] text-ink-500">真实收入</div><div className="mt-1 font-num text-xl font-semibold text-emerald-600">¥{fmtMoney(report.stats.income ?? 0)}</div></div>
+            <div className="card p-4"><div className="text-[11px] text-ink-500">收支结余</div><div className="mt-1 font-num text-xl font-semibold text-ink-900">¥{fmtMoney(report.stats.balance ?? 0)}</div></div>
           </div>
-          <p className="px-1 text-[11px] leading-relaxed text-ink-400">净支出为个人承担减当期退款；代垫、借还款和账户转账分别记录。结余根据已记流水计算，账户实际余额请以银行为准。对比采用前一个等长周期。</p>
+          <p className="px-1 text-[11px] leading-relaxed text-ink-500">净支出为个人承担减当期退款；代垫、借还款和账户转账分别记录。结余根据已记流水计算，账户实际余额请以银行为准。对比采用前一个等长周期。</p>
 
           {report.stats.count > 0 && (
             <div className="card p-4">
@@ -324,7 +324,7 @@ export function ReportPanel({ refreshKey }: Props) {
                 <div className="relative w-[116px] shrink-0">
                   <Chart option={donutOption} height={116} />
                   <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-                    <span className="text-[10px] text-ink-400">分类</span>
+                    <span className="text-[11px] text-ink-500">分类</span>
                     <span className="font-num text-[17px] font-semibold leading-tight">
                       {report.stats.by_category.filter((c) => c.value > 0).length}
                     </span>
@@ -335,7 +335,7 @@ export function ReportPanel({ refreshKey }: Props) {
                     const percent = (item.value / (report.stats.total || 1)) * 100
                     return (
                       <div key={item.label}>
-                        <div className="flex items-center justify-between text-[11.5px]">
+                        <div className="flex items-center justify-between text-[12px]">
                           <span className="flex items-center gap-1.5 text-ink-600">
                             <CategoryIcon name={ICON_MAP[item.label] ?? 'dots'} size={12} style={{ color: colorFor(item.label) }} />
                             {item.label}
@@ -357,7 +357,7 @@ export function ReportPanel({ refreshKey }: Props) {
               {report.stats.by_category.length > 4 && (
                 <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1.5 border-t border-ink-50 pt-3">
                   {report.stats.by_category.slice(4).map((item) => (
-                    <div key={item.label} className="flex items-center justify-between text-[11.5px]">
+                    <div key={item.label} className="flex items-center justify-between text-[12px]">
                       <span className="flex items-center gap-1.5 text-ink-500">
                         <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: colorFor(item.label) }} />
                         {item.label}
@@ -370,14 +370,14 @@ export function ReportPanel({ refreshKey }: Props) {
 
               {report.stats.by_payment.filter((p) => p.label !== '未记录').length > 0 && (
                 <div className="mt-3 border-t border-ink-50 pt-3">
-                  <div className="mb-2 text-[11px] text-ink-400">付款方式</div>
+                  <div className="mb-2 text-[11px] text-ink-500">付款方式</div>
                   <div className="flex flex-wrap gap-1.5">
                     {report.stats.by_payment
                       .filter((p) => p.label !== '未记录')
                       .map((item) => (
                         <span
                           key={item.label}
-                          className="flex items-center gap-1.5 rounded-full bg-ink-50 py-1 pl-2 pr-2.5 text-[11.5px]"
+                          className="flex items-center gap-1.5 rounded-full bg-ink-50 py-1 pl-2 pr-2.5 text-[12px]"
                         >
                           <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: paymentColor(item.label) }} />
                           <span className="text-ink-600">{item.label}</span>
@@ -400,7 +400,7 @@ export function ReportPanel({ refreshKey }: Props) {
                     className="flex items-center gap-2 rounded-full bg-ink-50 py-1 pl-2.5 pr-1.5"
                   >
                     <span className="text-[12px] text-ink-700">{event.label}</span>
-                    <span className="rounded-full bg-white px-2 py-0.5 font-num text-[11.5px] font-medium tabular-nums text-ink-900">
+                    <span className="rounded-full bg-white px-2 py-0.5 font-num text-[12px] font-medium tabular-nums text-ink-900">
                       ¥{fmtMoney(event.value)}
                     </span>
                   </div>
@@ -434,7 +434,7 @@ export function ReportPanel({ refreshKey }: Props) {
                   </div>
                 )}
                 {!insightLoading && !insight && (
-                  <div className="mt-1 text-[11.5px] leading-relaxed text-ink-400">
+                  <div className="mt-1 text-[12px] leading-relaxed text-ink-500">
                     让 AI 读一遍这{period === 'year' ? '一年' : period === 'day' ? '一天' : '段时间'}的账，给几句具体建议。
                   </div>
                 )}
@@ -466,12 +466,12 @@ export function ReportPanel({ refreshKey }: Props) {
               <div className="space-y-2">
                 {report.top_transactions.map((tx, index) => (
                   <div key={tx.id} className="flex items-center gap-2.5">
-                    <span className="w-3 shrink-0 font-num text-[11px] text-ink-300">{index + 1}</span>
+                    <span className="w-3 shrink-0 font-num text-[11px] text-ink-400">{index + 1}</span>
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[12.5px] text-ink-800">
+                      <span className="block truncate text-[13px] text-ink-800">
                         {tx.merchant || tx.note || tx.category}
                       </span>
-                      <span className="text-[10.5px] text-ink-400">
+                      <span className="text-[11px] text-ink-500">
                         {tx.category} · {tx.date.slice(5).replace('-', '/')}
                         {tx.paymentMethod && ` · ${tx.paymentMethod}`}
                       </span>
@@ -487,8 +487,8 @@ export function ReportPanel({ refreshKey }: Props) {
 
           {report.stats.count === 0 && (
             <div className="py-10 text-center">
-              <div className="text-[13px] text-ink-400">这段时间还没有记录</div>
-              <div className="mt-1 text-[12px] text-ink-300">记几笔之后回来看看</div>
+              <div className="text-[13px] text-ink-500">这段时间还没有记录</div>
+              <div className="mt-1 text-[12px] text-ink-400">记几笔之后回来看看</div>
             </div>
           )}
         </>
