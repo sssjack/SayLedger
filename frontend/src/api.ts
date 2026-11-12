@@ -299,6 +299,7 @@ export const api = {
     limit?: number
     month?: string
     keyword?: string
+    category?: string
     event?: string
     start?: string
     end?: string
@@ -311,6 +312,7 @@ export const api = {
     if (params.limit) q.set('limit', String(params.limit))
     if (params.month) q.set('month', params.month)
     if (params.keyword) q.set('keyword', params.keyword)
+    if (params.category) q.set('category', params.category)
     if (params.event) q.set('event', params.event)
     if (params.start) q.set('start', params.start)
     if (params.end) q.set('end', params.end)

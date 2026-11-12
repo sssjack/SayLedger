@@ -1,71 +1,37 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api, type Insight, type Report } from '../api'
 import { Chart, TOOLTIP_STYLE } from './Chart'
-import { fmtMoney } from '../utils'
-import { CategoryIcon, IconChevron, IconDown, IconSpark, IconUp } from '../icons'
+import { fmtMoney, mute } from '../utils'
+import { CategoryIcon, IconInbox, IconSpark } from '../icons'
 import { CATEGORY_COLORS } from './MessageBubble'
 import { ICON_MAP } from './TransactionCard'
-
-type Period = 'day' | 'month' | 'year' | 'custom'
+import { Amount } from './Amount'
+import { EmptyState } from './EmptyState'
+import { StatsNote } from './StatsNote'
+import type { Period } from './PeriodPicker'
 
 type Props = {
+  period: Period
   refreshKey: number
 }
 
-const PERIOD_TABS: { key: Period; label: string }[] = [
-  { key: 'day', label: '日' },
-  { key: 'month', label: '月' },
-  { key: 'year', label: '年' },
-  { key: 'custom', label: '区间' },
-]
-
-function todayISO(): string {
-  const now = new Date()
-  const offset = now.getTimezoneOffset() * 60000
-  return new Date(now.getTime() - offset).toISOString().slice(0, 10)
-}
-
-function shiftAnchor(anchor: string, period: Period, delta: number): string {
-  if (period === 'custom') return anchor
-  const [y, m, d = 1] = anchor.split('-').map(Number)
-  if (period === 'day') {
-    const date = new Date(y, m - 1, d + delta)
-    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
-  }
-  if (period === 'year') return `${y + delta}-01-01`
-  const date = new Date(y, m - 1 + delta, 1)
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-01`
-}
-
-function defaultAnchor(period: Period): string {
-  const today = todayISO()
-  if (period === 'year') return `${today.slice(0, 4)}-01-01`
-  if (period === 'month') return `${today.slice(0, 7)}-01`
-  return today
-}
-
-export function ReportPanel({ refreshKey }: Props) {
-  const [period, setPeriod] = useState<Period>('month')
-  const [anchor, setAnchor] = useState(() => defaultAnchor('month'))
-  const [rangeStart, setRangeStart] = useState(() => {
-    const date = new Date()
-    date.setDate(1)
-    const offset = date.getTimezoneOffset() * 60000
-    return new Date(date.getTime() - offset).toISOString().slice(0, 10)
-  })
-  const [rangeEnd, setRangeEnd] = useState(todayISO)
+export function ReportPanel({ period, refreshKey }: Props) {
   const [report, setReport] = useState<Report | null>(null)
   const [insight, setInsight] = useState<Insight | null>(null)
   const [loading, setLoading] = useState(true)
   const [insightLoading, setInsightLoading] = useState(false)
   const [error, setError] = useState('')
 
+  const opts = useMemo(
+    () => (period.mode === 'custom' ? { start: period.start, end: period.end } : { anchor: period.anchor }),
+    [period.mode, period.start, period.end, period.anchor],
+  )
+
   const load = useCallback(async () => {
     setLoading(true)
     setError('')
     try {
-      const opts = period === 'custom' ? { start: rangeStart, end: rangeEnd } : { anchor }
-      const data = await api.report(period, opts)
+      const data = await api.report(period.mode, opts)
       setReport(data)
       setInsight(null)
     } catch (err) {
@@ -73,7 +39,7 @@ export function ReportPanel({ refreshKey }: Props) {
     } finally {
       setLoading(false)
     }
-  }, [period, anchor, rangeStart, rangeEnd])
+  }, [period.mode, opts])
 
   useEffect(() => {
     void load()
@@ -82,26 +48,20 @@ export function ReportPanel({ refreshKey }: Props) {
   const fetchInsight = useCallback(async () => {
     setInsightLoading(true)
     try {
-      const opts = period === 'custom' ? { start: rangeStart, end: rangeEnd } : { anchor }
-      const data = await api.insight(period, opts)
+      const data = await api.insight(period.mode, opts)
       setInsight(data.insight)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'AI 点评暂时不可用')
     } finally {
       setInsightLoading(false)
     }
-  }, [period, anchor, rangeStart, rangeEnd])
-
-  const isCurrent = useMemo(() => {
-    if (period === 'custom') return rangeEnd >= todayISO()
-    return anchor === defaultAnchor(period)
-  }, [anchor, period, rangeEnd])
+  }, [period.mode, opts])
 
   const trendOption = useMemo(() => {
     if (!report) return {}
     const useDaily = report.daily.length > 0
     const labels = useDaily
-      ? report.daily.map((d) => (period === 'day' ? d.date : d.date.slice(8)))
+      ? report.daily.map((d) => (period.mode === 'day' ? d.date : d.date.slice(8)))
       : report.monthly.map((m) => `${Number(m.label.slice(5))}月`)
     const values = useDaily ? report.daily.map((d) => d.value) : report.monthly.map((m) => m.value)
 
@@ -112,7 +72,7 @@ export function ReportPanel({ refreshKey }: Props) {
         trigger: 'axis',
         axisPointer: { type: 'line', lineStyle: { color: '#d5d9e2', type: 'dashed' } },
         formatter: (params: { axisValue: string; value: number }[]) =>
-          `${useDaily && period !== 'day' ? `${params[0].axisValue}日` : params[0].axisValue}&nbsp;&nbsp;<b>¥${fmtMoney(Number(params[0].value))}</b>`,
+          `${useDaily && period.mode !== 'day' ? `${params[0].axisValue}日` : params[0].axisValue}&nbsp;&nbsp;<b>¥${fmtMoney(Number(params[0].value))}</b>`,
       },
       xAxis: {
         type: 'category',
@@ -152,7 +112,7 @@ export function ReportPanel({ refreshKey }: Props) {
         },
       ],
     }
-  }, [report, period])
+  }, [report, period.mode])
 
   const donutOption = useMemo(() => {
     if (!report) return {}
@@ -174,7 +134,7 @@ export function ReportPanel({ refreshKey }: Props) {
           itemStyle: { borderRadius: 6 },
           label: { show: false },
           emphasis: { scale: true, scaleSize: 4 },
-          color: data.map((item) => colorFor(item.label)),
+          color: data.map((item) => mute(colorFor(item.label), 0.1)),
           data: data.map((item) => ({ name: item.label, value: item.value })),
         },
       ],
@@ -185,97 +145,9 @@ export function ReportPanel({ refreshKey }: Props) {
     return <div className="py-16 text-center text-[13px] text-ink-500">{error}</div>
   }
 
-  const changePeriod = (next: Period) => {
-    setPeriod(next)
-    if (next !== 'custom') setAnchor(defaultAnchor(next))
-  }
-
   return (
-    <div className="space-y-3.5">
-      <div className="flex items-center justify-between gap-2">
-        <div className="inline-flex shrink-0 rounded-full bg-ink-100 p-0.5">
-          {PERIOD_TABS.map((item) => (
-            <button
-              key={item.key}
-              onClick={() => changePeriod(item.key)}
-              className={`rounded-full px-3 py-1 text-[12px] font-medium transition ${
-                period === item.key ? 'bg-white text-ink-900 shadow-sm' : 'text-ink-500'
-              }`}
-            >
-              {item.label}
-            </button>
-          ))}
-        </div>
-
-        {period !== 'custom' && (
-          <div className="flex min-w-0 items-center gap-1">
-            <button
-              onClick={() => setAnchor((a) => shiftAnchor(a, period, -1))}
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-ink-500 transition hover:bg-white hover:text-ink-800"
-            >
-              <IconChevron width={16} height={16} className="rotate-180" />
-            </button>
-            <span className="min-w-0 truncate text-center text-[13px] font-medium text-ink-700">
-              {report?.label ?? '…'}
-            </span>
-            <button
-              onClick={() => setAnchor((a) => shiftAnchor(a, period, 1))}
-              disabled={isCurrent}
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-ink-500 transition hover:bg-white hover:text-ink-800 disabled:opacity-30"
-            >
-              <IconChevron width={16} height={16} />
-            </button>
-          </div>
-        )}
-      </div>
-
-      {period === 'custom' && (
-        <div className="card flex flex-wrap items-center gap-2 p-3">
-          <input
-            type="date"
-            value={rangeStart}
-            max={rangeEnd}
-            onChange={(event) => setRangeStart(event.target.value)}
-            className="rounded-lg border border-ink-200 px-2.5 py-1.5 text-[13px] text-ink-800 outline-none focus:border-ink-900"
-          />
-          <span className="text-[12px] text-ink-400">至</span>
-          <input
-            type="date"
-            value={rangeEnd}
-            min={rangeStart}
-            max={todayISO()}
-            onChange={(event) => setRangeEnd(event.target.value)}
-            className="rounded-lg border border-ink-200 px-2.5 py-1.5 text-[13px] text-ink-800 outline-none focus:border-ink-900"
-          />
-          <div className="ml-auto flex gap-1">
-            {[
-              { label: '近7天', days: 7 },
-              { label: '近30天', days: 30 },
-              { label: '近90天', days: 90 },
-            ].map((preset) => (
-              <button
-                key={preset.label}
-                onClick={() => {
-                  const end = new Date()
-                  const start = new Date()
-                  start.setDate(end.getDate() - (preset.days - 1))
-                  const iso = (date: Date) => {
-                    const offset = date.getTimezoneOffset() * 60000
-                    return new Date(date.getTime() - offset).toISOString().slice(0, 10)
-                  }
-                  setRangeStart(iso(start))
-                  setRangeEnd(iso(end))
-                }}
-                className="rounded-full bg-ink-50 px-2.5 py-1 text-[11px] text-ink-500 transition hover:bg-ink-100 hover:text-ink-800"
-              >
-                {preset.label}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {loading && !report && <div className="py-16 text-center text-[13px] text-ink-400">正在汇总…</div>}
+    <div className="space-y-3">
+      {loading && !report && <div className="py-16 text-center text-[13px] text-ink-500">正在汇总…</div>}
 
       {report && (
         <>
@@ -286,36 +158,37 @@ export function ReportPanel({ refreshKey }: Props) {
                 <span className="text-[11px] text-ink-500">{report.label}</span>
               </div>
               <div className="mt-1.5 flex items-end justify-between">
-                <div className="flex items-baseline gap-1.5">
-                  <span className="font-num text-[32px] font-semibold leading-none tracking-tight tabular-nums">
-                    ¥{fmtMoney(report.stats.total)}
-                  </span>
-                  {report.previous_total > 0 && (
-                    <span
-                      className={`mb-0.5 inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[11px] font-medium ${
-                        report.change_pct > 0 ? 'bg-red-50 text-red-500' : 'bg-emerald-50 text-emerald-600'
-                      }`}
-                    >
-                      {report.change_pct > 0 ? <IconUp width={11} height={11} /> : <IconDown width={11} height={11} />}
-                      {Math.abs(report.change_pct)}%
-                    </span>
-                  )}
-                </div>
+                <Amount value={report.stats.total} size={32} />
                 <div className="mb-0.5 text-right text-[11px] leading-relaxed text-ink-500">
                   <div>{report.stats.count} 笔</div>
                   <div>均 ¥{fmtMoney(report.stats.average)}</div>
                 </div>
               </div>
+              {report.previous_total > 0 && (
+                <div className="mt-1 text-[11px] text-ink-500">
+                  较上期
+                  <span className={report.change_pct > 0 ? 'text-red-500' : 'text-emerald-600'}>
+                    {report.change_pct > 0 ? ' +' : ' −'}
+                    {Math.abs(report.change_pct)}%
+                  </span>
+                </div>
+              )}
             </div>
             {report.stats.count > 0 && <Chart option={trendOption} height={112} />}
             {report.stats.count === 0 && <div className="h-4" />}
           </div>
 
           <div className="grid grid-cols-2 gap-3">
-            <div className="card p-4"><div className="text-[11px] text-ink-500">真实收入</div><div className="mt-1 font-num text-xl font-semibold text-emerald-600">¥{fmtMoney(report.stats.income ?? 0)}</div></div>
-            <div className="card p-4"><div className="text-[11px] text-ink-500">收支结余</div><div className="mt-1 font-num text-xl font-semibold text-ink-900">¥{fmtMoney(report.stats.balance ?? 0)}</div></div>
+            <div className="card p-4"><div className="text-[11px] text-ink-500">真实收入</div><div className="mt-1 text-emerald-600"><Amount value={report.stats.income ?? 0} size={20} /></div></div>
+            <div className="card p-4"><div className="text-[11px] text-ink-500">收支结余</div><div className="mt-1 text-ink-900"><Amount value={report.stats.balance ?? 0} size={20} /></div></div>
           </div>
-          <p className="px-1 text-[11px] leading-relaxed text-ink-500">净支出为个人承担减当期退款；代垫、借还款和账户转账分别记录。结余根据已记流水计算，账户实际余额请以银行为准。对比采用前一个等长周期。</p>
+          <StatsNote
+            items={[
+              '净支出为个人承担减当期退款；代垫、借还款和账户转账分别记录。',
+              '结余根据已记流水计算，账户实际余额请以银行为准。',
+              '对比采用前一个等长周期。',
+            ]}
+          />
 
           {report.stats.count > 0 && (
             <div className="card p-4">
@@ -337,7 +210,7 @@ export function ReportPanel({ refreshKey }: Props) {
                       <div key={item.label}>
                         <div className="flex items-center justify-between text-[12px]">
                           <span className="flex items-center gap-1.5 text-ink-600">
-                            <CategoryIcon name={ICON_MAP[item.label] ?? 'dots'} size={12} style={{ color: colorFor(item.label) }} />
+                            <CategoryIcon name={ICON_MAP[item.label] ?? 'dots'} size={12} style={{ color: mute(colorFor(item.label), 0.18) }} />
                             {item.label}
                           </span>
                           <span className="font-num tabular-nums text-ink-800">¥{fmtMoney(item.value)}</span>
@@ -345,7 +218,7 @@ export function ReportPanel({ refreshKey }: Props) {
                         <div className="mt-1 h-1 overflow-hidden rounded-full bg-ink-100">
                           <div
                             className="h-full rounded-full transition-all duration-500"
-                            style={{ width: `${Math.max(percent, 3)}%`, backgroundColor: colorFor(item.label) }}
+                            style={{ width: `${Math.max(percent, 3)}%`, backgroundColor: mute(colorFor(item.label), 0.2) }}
                           />
                         </div>
                       </div>
@@ -420,7 +293,7 @@ export function ReportPanel({ refreshKey }: Props) {
                   {!insightLoading && (
                     <button
                       onClick={() => void fetchInsight()}
-                      className="rounded-full bg-ink-900 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-ink-800"
+                      className="rounded-full bg-accent-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-accent-700"
                     >
                       {insight ? '重新生成' : '生成'}
                     </button>
@@ -435,7 +308,7 @@ export function ReportPanel({ refreshKey }: Props) {
                 )}
                 {!insightLoading && !insight && (
                   <div className="mt-1 text-[12px] leading-relaxed text-ink-500">
-                    让 AI 读一遍这{period === 'year' ? '一年' : period === 'day' ? '一天' : '段时间'}的账，给几句具体建议。
+                    让 AI 读一遍这{period.mode === 'year' ? '一年' : period.mode === 'day' ? '一天' : '段时间'}的账，给几句具体建议。
                   </div>
                 )}
                 {insight && (
@@ -486,10 +359,11 @@ export function ReportPanel({ refreshKey }: Props) {
           )}
 
           {report.stats.count === 0 && (
-            <div className="py-10 text-center">
-              <div className="text-[13px] text-ink-500">这段时间还没有记录</div>
-              <div className="mt-1 text-[12px] text-ink-400">记几笔之后回来看看</div>
-            </div>
+            <EmptyState
+              icon={<IconInbox width={20} height={20} />}
+              title="这段时间还没有记录"
+              hint="记几笔之后回来看趋势和分类构成"
+            />
           )}
         </>
       )}

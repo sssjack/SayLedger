@@ -10,6 +10,12 @@
   -webkit-tap-highlight-color: transparent;
 }
 
+/* 全站统一的键盘焦点环。之前 16 处 outline-none 没有任何替代，Tab 键走过去完全看不见落在哪 */
+:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid #4f46e5;
+  outline-offset: 2px;
+}
+
 html,
 body,
 #root {
@@ -49,7 +55,7 @@ body {
     @apply inline-flex items-center justify-center gap-1.5 rounded-full px-4 py-2 text-sm font-medium transition active:scale-[.97] disabled:pointer-events-none disabled:opacity-40;
   }
   .btn-primary {
-    @apply btn bg-ink-900 text-white hover:bg-ink-800;
+    @apply btn bg-accent-600 text-white hover:bg-accent-700;
   }
   .btn-ghost {
     @apply btn text-ink-500 hover:bg-ink-100 hover:text-ink-800;
@@ -61,6 +67,10 @@ body {
     @apply rounded-full px-3 py-1.5 text-[13px] font-medium text-ink-500 transition;
   }
   .tab-active {
-    @apply bg-ink-900 text-white;
+    @apply bg-accent-600 text-white;
+  }
+  /* 长说明文字（统计口径、免责声明）统一 12px / 1.55，不再用 11px 挤成灰块 */
+  .prose-note {
+    @apply text-[12px] leading-[1.55] text-ink-500;
   }
 }

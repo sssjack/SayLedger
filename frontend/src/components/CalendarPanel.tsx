@@ -3,7 +3,12 @@ import { api, KIND_LABELS, type CalendarDay, type CalendarDayDetail } from '../a
 import { holidayOf, isHolidayStart } from '../holidays'
 import { fmtMoney } from '../utils'
 
-type Props = { refreshKey: number }
+type Props = {
+  /** 由账单页的周期选择器统一提供，日历只按月看 */
+  month: string
+  onMonthChange: (month: string) => void
+  refreshKey: number
+}
 
 const pad = (value: number) => String(value).padStart(2, '0')
 const today = () => {
@@ -11,11 +16,6 @@ const today = () => {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 }
 const thisMonth = () => today().slice(0, 7)
-const shiftMonth = (month: string, delta: number) => {
-  const [y, m] = month.split('-').map(Number)
-  const d = new Date(y, m - 1 + delta, 1)
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}`
-}
 
 /** 某天的两行数字：支出为净支出（支出 − 退款），退款大于支出时折进收入行。 */
 function dayLines(day: CalendarDay | undefined): { spend: number; earn: number } {
@@ -42,10 +42,9 @@ function memoTime(memo: { nextTriggerAt: string; lastSentAt: string | null }, da
   return raw.slice(11, 16)
 }
 
-export function CalendarPanel({ refreshKey }: Props) {
-  const [month, setMonth] = useState(thisMonth)
+export function CalendarPanel({ month, onMonthChange, refreshKey }: Props) {
   const [days, setDays] = useState<CalendarDay[]>([])
-  const [selected, setSelected] = useState(today())
+  const [selected, setSelected] = useState(() => (month === thisMonth() ? today() : ''))
   const [detail, setDetail] = useState<CalendarDayDetail | null>(null)
   const [loadingMonth, setLoadingMonth] = useState(true)
   const [loadingDay, setLoadingDay] = useState(false)
@@ -80,12 +79,10 @@ export function CalendarPanel({ refreshKey }: Props) {
     else setDetail(null)
   }, [selected, loadDay])
 
-  const goMonth = (delta: number) => {
-    const next = shiftMonth(month, delta)
-    setMonth(next)
-    // 切到当月默认选中今天，切到别的月先不选，等用户点某一天
-    setSelected(next === thisMonth() ? today() : '')
-  }
+  // 月份由父级切换：切到当月默认选中今天，切到别的月先不选，等用户点某一天
+  useEffect(() => {
+    setSelected(month === thisMonth() ? today() : '')
+  }, [month])
 
   const dayMap = useMemo(() => new Map(days.map((d) => [d.date, d])), [days])
 
@@ -111,45 +108,27 @@ export function CalendarPanel({ refreshKey }: Props) {
     return { spend, earn }
   }, [days])
 
-  const [year, monthNum] = month.split('-').map(Number)
   const todayStr = today()
   const selectedHoliday = selected ? holidayOf(selected) : undefined
 
   return (
     <div className="space-y-4">
       <div className="card p-4">
-        <div className="flex items-center justify-between">
-          <button
-            onClick={() => goMonth(-1)}
-            className="rounded-lg px-3 py-1.5 text-[13px] font-medium text-ink-600 hover:bg-ink-50"
-          >
-            ‹ 上月
-          </button>
-          <div className="text-[15px] font-semibold text-ink-900">{year}年{monthNum}月</div>
-          <button
-            onClick={() => goMonth(1)}
-            className="rounded-lg px-3 py-1.5 text-[13px] font-medium text-ink-600 hover:bg-ink-50"
-          >
-            下月 ›
-          </button>
-        </div>
-        <div className="mt-1 flex items-center justify-center gap-3 text-[12px] text-ink-500">
-          <span>支出 <span className="font-num font-semibold text-red-500">-{fmtMoney(monthTotals.spend)}</span></span>
-          <span>收入 <span className="font-num font-semibold text-emerald-600">+{fmtMoney(monthTotals.earn)}</span></span>
+        <div className="flex items-center justify-between gap-2 text-[12px] text-ink-500">
+          <span>
+            支出 <span className="font-num font-semibold text-red-500">−{fmtMoney(monthTotals.spend)}</span>
+          </span>
+          <span>
+            收入 <span className="font-num font-semibold text-emerald-600">+{fmtMoney(monthTotals.earn)}</span>
+          </span>
           {month !== thisMonth() && (
             <button
-              onClick={() => { setMonth(thisMonth()); setSelected(today()) }}
+              onClick={() => onMonthChange(thisMonth())}
               className="font-medium text-ink-700 underline underline-offset-2"
             >
               回到本月
             </button>
           )}
-        </div>
-        <div className="mt-1 text-center text-[11px] text-ink-500">
-          <span className="mr-1 rounded bg-red-100 px-1 py-px font-medium text-red-600">春节</span>
-          法定节假日
-          <span className="ml-3 mr-1 rounded bg-ink-100 px-1 py-px text-ink-500">班</span>
-          调休上班
         </div>
 
         <div className="mt-3 grid grid-cols-7 gap-1 text-center text-[11px] text-ink-500">
@@ -185,7 +164,7 @@ export function CalendarPanel({ refreshKey }: Props) {
                     >
                       <span
                         className={`flex h-5 w-5 items-center justify-center rounded-full text-[13px] ${
-                          isToday ? 'bg-ink-900 font-semibold text-white' : 'text-ink-800'
+                          isToday ? 'bg-accent-600 font-semibold text-white' : 'text-ink-800'
                         }`}
                       >
                         {day}
@@ -219,6 +198,12 @@ export function CalendarPanel({ refreshKey }: Props) {
           </div>
         )}
         {error && <div className="mt-2 text-[12px] text-red-600">{error}</div>}
+        <div className="mt-3 border-t border-ink-50 pt-2 text-center text-[11px] text-ink-500">
+          <span className="mr-1 rounded bg-red-100 px-1 py-px font-medium text-red-600">春节</span>
+          法定节假日
+          <span className="ml-3 mr-1 rounded bg-ink-100 px-1 py-px text-ink-500">班</span>
+          调休上班
+        </div>
       </div>
 
       {selected ? (

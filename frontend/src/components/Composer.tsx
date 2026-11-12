@@ -185,7 +185,7 @@ export function Composer({ onSend, disabled }: Props) {
             {uploading ? (
               <span className="h-4 w-4 animate-spin rounded-full border-2 border-ink-200 border-t-ink-700" />
             ) : (
-              <IconImage width={19} height={19} />
+              <IconImage width={18} height={18} />
             )}
           </button>
 
@@ -210,7 +210,7 @@ export function Composer({ onSend, disabled }: Props) {
               listening ? 'bg-red-500 text-white' : 'text-ink-500 hover:bg-ink-50 hover:text-ink-700'
             }`}
           >
-            {listening ? <IconStop width={16} height={16} /> : <IconMic width={19} height={19} />}
+            {listening ? <IconStop width={16} height={16} /> : <IconMic width={18} height={18} />}
             {listening && <span className="absolute inset-0 animate-ping rounded-full bg-red-400/40" />}
           </button>
 
@@ -219,7 +219,7 @@ export function Composer({ onSend, disabled }: Props) {
             disabled={!canSend}
             title="发送"
             className={`mb-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition ${
-              canSend ? 'bg-ink-900 text-white hover:bg-ink-800' : 'bg-ink-100 text-ink-300'
+              canSend ? 'bg-accent-600 text-white hover:bg-accent-700' : 'bg-ink-100 text-ink-300'
             }`}
           >
             {disabled ? (

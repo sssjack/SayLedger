@@ -33,6 +33,6 @@ export function QuickEntry({ categories, payments, onDone }: { categories: strin
       {kind === 'expense' && <input aria-label="记账个人承担" placeholder="个人承担，默认全部" inputMode="decimal" value={own} onChange={e => setOwn(e.target.value)} className={`${field} col-span-2`} />}
     </div>
     {error && <p role="alert" className="text-[12px] text-red-600">{error}</p>}
-    <div className="flex items-center justify-between gap-2"><span className="text-[11px] text-ink-500">退款和回款请在原账单上操作。</span><button disabled={busy} className="shrink-0 rounded-lg bg-ink-900 px-3 py-2 text-[12px] text-white disabled:opacity-40">{busy ? '保存中' : '记好了'}</button></div>
+    <div className="flex items-center justify-between gap-2"><span className="text-[11px] text-ink-500">退款和回款请在原账单上操作。</span><button disabled={busy} className="shrink-0 rounded-lg bg-accent-600 px-3 py-2 text-[12px] text-white disabled:opacity-40">{busy ? '保存中' : '记好了'}</button></div>
   </form>
 }

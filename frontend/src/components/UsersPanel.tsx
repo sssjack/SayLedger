@@ -68,7 +68,7 @@ export function UsersPanel() {
         <button
           type="submit"
           disabled={busy || !username.trim() || !password}
-          className="rounded-xl bg-ink-900 px-4 py-2 text-[13px] font-medium text-white transition hover:bg-ink-800 disabled:opacity-40"
+          className="rounded-xl bg-accent-600 px-4 py-2 text-[13px] font-medium text-white transition hover:bg-accent-700 disabled:opacity-40"
         >
           {busy ? '创建中…' : '创建账号'}
         </button>

@@ -78,6 +78,27 @@ export const IconTrash = (p: P) => (
   </svg>
 )
 
+export const IconInfo = (p: P) => (
+  <svg {...base(p)}>
+    <circle cx="12" cy="12" r="8.5" />
+    <path d="M12 11v5M12 8h.01" />
+  </svg>
+)
+
+export const IconEdit = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M4 20h4L19 9a2.1 2.1 0 0 0-3-3L5 17v3Z" />
+    <path d="m14.5 6.5 3 3" />
+  </svg>
+)
+
+export const IconInbox = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M4 13h4l1.5 2.5h5L16 13h4" />
+    <path d="M4 13 6.5 5.5A1.5 1.5 0 0 1 8 4.5h8a1.5 1.5 0 0 1 1.4 1L20 13v4.5a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 17.5V13Z" />
+  </svg>
+)
+
 export const IconSpark = (p: P) => (
   <svg {...base(p)}>
     <path d="M12 3v4M12 17v4M3 12h4M17 12h4M6.3 6.3l2.6 2.6M15.1 15.1l2.6 2.6M17.7 6.3l-2.6 2.6M8.9 15.1l-2.6 2.6" />

@@ -63,7 +63,7 @@ export function MemosPanel({ refreshKey, onChanged }: Props) {
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="text-[13px] font-medium text-ink-900">{memo.content}</span>
-          {!!memo.stageDay && <span className="text-[11px] text-ink-500">计划第{memo.stageDay}天</span>}
+          {!!memo.stageDay && <span className="prose-note">计划第{memo.stageDay}天</span>}
           {memo.recurrenceLabel && (
             <span className="rounded-full bg-indigo-50 px-1.5 py-0.5 text-[11px] text-indigo-600">{memo.recurrenceLabel}</span>
           )}
@@ -90,7 +90,7 @@ export function MemosPanel({ refreshKey, onChanged }: Props) {
   return (
     <div className="space-y-4">
       <div className="px-1">
-        <h1 className="text-lg font-semibold text-ink-900">备忘录</h1>
+        <h1 className="text-[15px] font-semibold text-ink-900">备忘录</h1>
         <p className="mt-1 text-[12px] leading-relaxed text-ink-500">
           也可以直接在对话里说「下周三提醒我交房租」「每周三下午3点提醒我交水电费」，到点我会来喊你；绑了微信还会在微信里提醒。
         </p>
@@ -122,14 +122,14 @@ export function MemosPanel({ refreshKey, onChanged }: Props) {
               <option value="weekly">每周</option>
               <option value="interval">每隔几天</option>
             </select>
-            <button disabled={busy} className="rounded-lg bg-ink-900 px-3 py-2 text-[12px] text-white disabled:opacity-40">添加</button>
+            <button disabled={busy} className="rounded-lg bg-accent-600 px-3 py-2 text-[12px] text-white disabled:opacity-40">添加</button>
           </div>
           {recurrence === 'interval' && <label className="col-span-2 flex items-center gap-2 text-[12px] text-ink-600">
             每 <input aria-label="循环间隔天数" type="number" min={1} max={365} required value={intervalDays}
               onChange={(event) => setIntervalDays(Number(event.target.value))} className={`${input} w-20`} /> 天重复一次
           </label>}
         </form>
-        <p className="text-[11px] text-ink-500">每隔几天会从首次提醒日期开始循环；也可以在聊天中查询或修改整份计划。</p>
+        <p className="prose-note">每隔几天会从首次提醒日期开始循环；也可以在聊天中查询或修改整份计划。</p>
       </section>
       {finished.length > 0 && (
         <section className="card space-y-3 p-4">

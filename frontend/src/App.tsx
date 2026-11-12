@@ -1,40 +1,29 @@
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, type Category, type ChatMessage, type PaymentMethod } from './api'
 import { Composer } from './components/Composer'
 import { MessageBubble } from './components/MessageBubble'
-import { BillsPanel } from './components/BillsPanel'
+import { BillsPage } from './components/BillsPage'
 import { MoneyPanel } from './components/MoneyPanel'
 import { MemosPanel } from './components/MemosPanel'
-import { CalendarPanel } from './components/CalendarPanel'
 import { UsersPanel } from './components/UsersPanel'
-import { fmtMoney } from './utils'
-import {
-  CategoryIcon,
-  IconBell,
-  IconCalendar,
-  IconChart,
-  IconList,
-  IconLogout,
-  IconSpark,
-  IconUser,
-} from './icons'
+import { UndoToast } from './components/UndoToast'
+import { Amount } from './components/Amount'
+import { readQuery, updateQuery } from './urlState'
+import { fmtMoney, mute, tint } from './utils'
+import { CategoryIcon, IconBell, IconList, IconLogout, IconSpark, IconUser } from './icons'
 import { ICON_MAP } from './components/TransactionCard'
 import { APP_NAME, APP_TAGLINE } from './brand'
 import assistantAvatar from './assets/assistant-avatar.webp'
 
-type Tab = 'chat' | 'bills' | 'report' | 'memos' | 'me'
-
-/** 报告页是唯一用到 ECharts 的地方，单独切出去，首屏和记账链路不再下载图表库。 */
-const ReportPanel = lazy(() => import('./components/ReportPanel').then((mod) => ({ default: mod.ReportPanel })))
+type Tab = 'chat' | 'bills' | 'memos' | 'me'
 
 /**
- * 导航只有 5 个入口。日历并进账单（同一份流水换个看法），
- * 原来的「管理」拆开：预算与往来在「我的」页，账号与退出登录也在那里。
+ * 导航 4 个入口。账单/日历/分析已经合成一页（回答的是同一个问题：这段时间钱去哪了），
+ * 预算、往来、账号与退出登录在「我的」。
  */
 const NAV: { key: Tab; label: string; icon: (props: { width?: number; height?: number }) => JSX.Element }[] = [
   { key: 'chat', label: '对话', icon: IconSpark },
   { key: 'bills', label: '账单', icon: IconList },
-  { key: 'report', label: '报告', icon: IconChart },
   { key: 'memos', label: '备忘', icon: IconBell },
   { key: 'me', label: '我的', icon: IconUser },
 ]
@@ -55,8 +44,12 @@ export default function App() {
   const [me, setMe] = useState<{ id: number; username: string } | null>(null)
   const [categories, setCategories] = useState<Category[]>([])
   const [payments, setPayments] = useState<PaymentMethod[]>([])
-  const [tab, setTab] = useState<Tab>('chat')
-  const [billsView, setBillsView] = useState<'list' | 'calendar'>('list')
+  const [tab, setTab] = useState<Tab>(() => {
+    const raw = readQuery().get('tab')
+    return raw === 'bills' || raw === 'memos' || raw === 'me' ? raw : 'chat'
+  })
+  const [billsKey, setBillsKey] = useState(0)
+  const [pendingDelete, setPendingDelete] = useState<{ id: number } | null>(null)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [sending, setSending] = useState(false)
   const [voiceEnabled, setVoiceEnabled] = useState(false)
@@ -67,6 +60,14 @@ export default function App() {
   const [weekTotal, setWeekTotal] = useState(0)
   const [error, setError] = useState('')
   const bottomRef = useRef<HTMLDivElement>(null)
+  const deleteTimer = useRef<number | null>(null)
+  const deleteRef = useRef<{ id: number } | null>(null)
+  deleteRef.current = pendingDelete
+
+  const changeTab = useCallback((next: Tab) => {
+    setTab(next)
+    updateQuery({ tab: next === 'chat' ? null : next })
+  }, [])
 
   const bootstrap = useCallback(async () => {
     try {
@@ -205,9 +206,27 @@ export default function App() {
     return () => { window.removeEventListener('focus', sync); document.removeEventListener('visibilitychange', sync) }
   }, [authed, sending, syncLedger])
 
+  const commitDelete = useCallback(async () => {
+    const target = deleteRef.current
+    if (!target) return
+    deleteRef.current = null
+    setPendingDelete(null)
+    if (deleteTimer.current) {
+      window.clearTimeout(deleteTimer.current)
+      deleteTimer.current = null
+    }
+    try {
+      await api.deleteTransaction(target.id)
+    } catch {
+      /* 删除失败时重拉对话，这一笔会重新出现 */
+    }
+    await syncLedger()
+  }, [syncLedger])
+
+  // 对话里的删除同样延迟 5 秒提交，撤销等于什么都没发生
   const deleteTx = useCallback(
     async (id: number) => {
-      await api.deleteTransaction(id)
+      if (deleteRef.current) await commitDelete()
       // 记录可能同时出现在「刚记的账」和「改删候选」里，两处都要移除
       setMessages((prev) =>
         prev.map((message) => ({
@@ -219,9 +238,27 @@ export default function App() {
           },
         })),
       )
-      void syncLedger()
+      deleteRef.current = { id }
+      setPendingDelete({ id })
+      deleteTimer.current = window.setTimeout(() => void commitDelete(), 5000)
     },
-    [syncLedger],
+    [commitDelete],
+  )
+
+  const undoDelete = useCallback(() => {
+    if (deleteTimer.current) window.clearTimeout(deleteTimer.current)
+    deleteTimer.current = null
+    deleteRef.current = null
+    setPendingDelete(null)
+    void syncLedger()
+  }, [syncLedger])
+
+  useEffect(
+    () => () => {
+      if (deleteTimer.current) window.clearTimeout(deleteTimer.current)
+      if (deleteRef.current) void api.deleteTransaction(deleteRef.current.id)
+    },
+    [],
   )
 
   const updateTx = useCallback(
@@ -284,12 +321,14 @@ export default function App() {
             return (
               <button
                 key={item.key}
-                onClick={() => setTab(item.key)}
+                onClick={() => changeTab(item.key)}
                 className={`flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-[14px] font-medium transition ${
-                  active ? 'bg-white text-ink-900 shadow-card' : 'text-ink-500 hover:bg-white/60 hover:text-ink-800'
+                  active
+                    ? 'bg-white text-accent-700 shadow-card'
+                    : 'text-ink-500 hover:bg-white/60 hover:text-ink-800'
                 }`}
               >
-                <Icon width={17} height={17} />
+                <Icon width={18} height={18} />
                 {item.label}
               </button>
             )
@@ -299,8 +338,8 @@ export default function App() {
         <div className="mt-6 space-y-3">
           <div className="card p-4">
             <div className="text-[12px] text-ink-500">今天个人净支出</div>
-            <div className="mt-0.5 font-num text-[22px] font-semibold tracking-tight tabular-nums">
-              ¥{fmtMoney(todayTotal)}
+            <div className="mt-0.5 text-ink-900">
+              <Amount value={todayTotal} size={22} />
             </div>
             <div className="mt-3 flex items-center justify-between border-t border-ink-50 pt-2.5 text-[12px]">
               <span className="text-ink-500">近 7 天</span>
@@ -309,17 +348,22 @@ export default function App() {
           </div>
 
           <div className="card p-4">
-            <div className="mb-2.5 text-[12px] text-ink-500">分类</div>
+            <div className="mb-2.5 text-[12px] text-ink-500">按分类看</div>
             <div className="flex flex-wrap gap-1.5">
               {categories.slice(0, 8).map((item) => (
-                <span
+                <button
                   key={item.name}
-                  title={item.desc}
-                  className="flex h-7 w-7 items-center justify-center rounded-lg"
-                  style={{ backgroundColor: `${item.color}12`, color: item.color }}
+                  title={`看${item.name}的流水`}
+                  onClick={() => {
+                    changeTab('bills')
+                    updateQuery({ cat: item.name, view: null })
+                    setBillsKey((key) => key + 1)
+                  }}
+                  className="flex h-7 w-7 items-center justify-center rounded-lg transition hover:scale-105"
+                  style={{ backgroundColor: tint(item.color, 0.92), color: mute(item.color, 0.18) }}
                 >
                   <CategoryIcon name={ICON_MAP[item.name] ?? item.icon} size={14} />
-                </span>
+                </button>
               ))}
             </div>
           </div>
@@ -327,7 +371,7 @@ export default function App() {
 
         <div className="mt-auto pt-4">
           <button
-            onClick={() => setTab('me')}
+            onClick={() => changeTab('me')}
             className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-[12px] text-ink-500 transition hover:bg-white hover:text-ink-800"
           >
             <IconUser width={14} height={14} />
@@ -393,50 +437,14 @@ export default function App() {
 
         {tab === 'bills' && (
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-            <div className="mx-auto max-w-2xl px-4 py-4">
-              <div className="mb-3 flex items-center justify-between gap-2 px-1">
-                <span className="text-[15px] font-semibold text-ink-900">账单</span>
-                <div className="inline-flex shrink-0 rounded-full bg-ink-100 p-0.5 text-[12px] font-medium">
-                  <button
-                    onClick={() => setBillsView('list')}
-                    className={`flex items-center gap-1 rounded-full px-2.5 py-1 transition ${
-                      billsView === 'list' ? 'bg-white text-ink-900 shadow-sm' : 'text-ink-500'
-                    }`}
-                  >
-                    <IconList width={13} height={13} />
-                    流水
-                  </button>
-                  <button
-                    onClick={() => setBillsView('calendar')}
-                    className={`flex items-center gap-1 rounded-full px-2.5 py-1 transition ${
-                      billsView === 'calendar' ? 'bg-white text-ink-900 shadow-sm' : 'text-ink-500'
-                    }`}
-                  >
-                    <IconCalendar width={13} height={13} />
-                    日历
-                  </button>
-                </div>
-              </div>
-              {billsView === 'list' ? (
-                <BillsPanel
-                  categories={categoryNames}
-                  payments={payments}
-                  refreshKey={refreshKey}
-                  onChanged={() => void refreshNumbers()}
-                />
-              ) : (
-                <CalendarPanel refreshKey={refreshKey} />
-              )}
-            </div>
-          </div>
-        )}
-
-        {tab === 'report' && (
-          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-            <div className="mx-auto max-w-2xl px-4 py-4">
-              <Suspense fallback={<div className="py-16 text-center text-[13px] text-ink-500">正在加载报告…</div>}>
-                <ReportPanel refreshKey={refreshKey} />
-              </Suspense>
+            <div className="mx-auto flex min-h-full max-w-2xl flex-col px-4 py-4">
+              <BillsPage
+                key={billsKey}
+                categories={categories}
+                payments={payments}
+                refreshKey={refreshKey}
+                onChanged={() => void refreshNumbers()}
+              />
             </div>
           </div>
         )}
@@ -453,7 +461,14 @@ export default function App() {
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
             <div className="mx-auto max-w-2xl space-y-4 px-4 py-4">
               <AccountCard username={me?.username ?? ''} onLogout={() => void logout()} />
-              <MoneyPanel categories={categoryNames} payments={paymentNames} refreshKey={refreshKey} onChanged={() => void syncLedger()} />
+              <MoneyPanel
+                categories={categoryNames}
+                payments={paymentNames}
+                refreshKey={refreshKey}
+                onChanged={() => void syncLedger()}
+                voiceEnabled={voiceEnabled}
+                onToggleVoice={() => void toggleVoice()}
+              />
               {/* 账号管理只给 admin；预算与记账习惯是每个租户自己的 */}
               {me?.username === 'admin' && <UsersPanel />}
             </div>
@@ -467,32 +482,21 @@ export default function App() {
                 <div className="rounded-lg bg-red-50 px-3 py-1.5 text-[12px] text-red-600">{error}</div>
               </div>
             )}
-            <div className="mx-auto flex w-full max-w-2xl items-center justify-between px-4 pb-1">
-              <span className="text-[11px] text-ink-500">
-                {voiceEnabled ? '语音模式开：回答会朗读出来' : '语音模式关'}
-              </span>
-              <div className="flex items-center gap-2">
-                {voiceTapUrl && (
-                  <button
-                    onClick={() => {
-                      const audio = new Audio(voiceTapUrl)
-                      audioRef.current = audio
-                      setVoiceTapUrl(null)
-                      void audio.play()
-                    }}
-                    className="rounded-full bg-ink-900 px-2.5 py-1.5 text-[11px] font-medium text-white"
-                  >
-                    播放语音
-                  </button>
-                )}
+            {voiceTapUrl && (
+              <div className="mx-auto flex w-full max-w-2xl justify-end px-4 pb-1">
                 <button
-                  onClick={() => void toggleVoice()}
-                  className="rounded-full bg-ink-50 px-2.5 py-1.5 text-[11px] font-medium text-ink-600 hover:bg-ink-100"
+                  onClick={() => {
+                    const audio = new Audio(voiceTapUrl)
+                    audioRef.current = audio
+                    setVoiceTapUrl(null)
+                    void audio.play()
+                  }}
+                  className="rounded-full bg-accent-600 px-2.5 py-1.5 text-[11px] font-medium text-white"
                 >
-                  {voiceEnabled ? '语音：开' : '语音：关'}
+                  播放语音
                 </button>
               </div>
-            </div>
+            )}
             <Composer onSend={send} disabled={sending} />
           </div>
         )}
@@ -506,10 +510,10 @@ export default function App() {
           return (
             <button
               key={item.key}
-              onClick={() => setTab(item.key)}
+              onClick={() => changeTab(item.key)}
               aria-current={active ? 'page' : undefined}
               className={`flex flex-1 flex-col items-center gap-0.5 py-1.5 text-[11px] font-medium transition ${
-                active ? 'text-ink-900' : 'text-ink-500'
+                active ? 'text-accent-700' : 'text-ink-500'
               }`}
             >
               <Icon width={20} height={20} />
@@ -518,6 +522,8 @@ export default function App() {
           )
         })}
       </nav>
+
+      {pendingDelete && <UndoToast message="已删除 1 笔流水" onUndo={undoDelete} />}
     </div>
   )
 }
@@ -687,7 +693,7 @@ function Login({ onDone }: { onDone: () => void }) {
         <button
           type="submit"
           disabled={busy || !username.trim() || !password.trim()}
-          className="mt-3 w-full rounded-xl bg-ink-900 py-2.5 text-[14px] font-medium text-white transition hover:bg-ink-800 disabled:opacity-40"
+          className="mt-3 w-full rounded-xl bg-accent-600 py-2.5 text-[14px] font-medium text-white transition hover:bg-accent-700 disabled:opacity-40"
         >
           {busy ? '验证中…' : mode === 'register' ? '注册并进入' : '进入'}
         </button>
