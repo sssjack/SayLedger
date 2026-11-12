@@ -9,9 +9,10 @@ import { UsersPanel } from './components/UsersPanel'
 import { UndoToast } from './components/UndoToast'
 import { Amount } from './components/Amount'
 import { readQuery, updateQuery } from './urlState'
-import { fmtMoney, mute, tint } from './utils'
-import { CategoryIcon, IconBell, IconList, IconLogout, IconSpark, IconUser } from './icons'
+import { mute, tint } from './utils'
+import { CategoryIcon, IconBell, IconList, IconLogout, IconPlus, IconSearch, IconSpark, IconUser } from './icons'
 import { ICON_MAP } from './components/TransactionCard'
+import { WeeklyDigest } from './components/WeeklyDigest'
 import { APP_NAME, APP_TAGLINE } from './brand'
 import assistantAvatar from './assets/assistant-avatar.webp'
 
@@ -28,15 +29,11 @@ const NAV: { key: Tab; label: string; icon: (props: { width?: number; height?: n
   { key: 'me', label: '我的', icon: IconUser },
 ]
 
-const SUGGESTIONS = [
-  '午饭花了 28',
-  '今天工资到账 8500',
-  '聚餐300，3人AA',
-  '这个月餐饮预算1500',
-  '还有谁没还我',
-  '我昨天花了哪些钱',
-  '明天下午3点提醒我开会',
-  '每周三提醒交水电费',
+/** 示例按「记一笔 / 查一下 / 提醒我」分组，各组的动词不同，用户一眼能对上自己的目的。 */
+const SUGGESTION_GROUPS: { title: string; items: string[] }[] = [
+  { title: '记一笔', items: ['午饭花了 28', '今天工资到账 8500', '聚餐300，3人AA'] },
+  { title: '查一下', items: ['我昨天花了哪些钱', '这个月餐饮花了多少', '还有谁没还我'] },
+  { title: '提醒我', items: ['明天下午3点提醒我开会', '每周三提醒交水电费'] },
 ]
 
 export default function App() {
@@ -51,6 +48,12 @@ export default function App() {
   const [billsKey, setBillsKey] = useState(0)
   const [pendingDelete, setPendingDelete] = useState<{ id: number } | null>(null)
   const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [hasMore, setHasMore] = useState(false)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [searchTerm, setSearchTerm] = useState('')
+  const [searchResults, setSearchResults] = useState<ChatMessage[] | null>(null)
+  const [pendingCount, setPendingCount] = useState(0)
   const [sending, setSending] = useState(false)
   const [voiceEnabled, setVoiceEnabled] = useState(false)
   const [voiceTapUrl, setVoiceTapUrl] = useState<string | null>(null)
@@ -60,8 +63,10 @@ export default function App() {
   const [weekTotal, setWeekTotal] = useState(0)
   const [error, setError] = useState('')
   const bottomRef = useRef<HTMLDivElement>(null)
+  const composerRef = useRef<HTMLTextAreaElement>(null)
   const deleteTimer = useRef<number | null>(null)
   const deleteRef = useRef<{ id: number } | null>(null)
+  const loadedCountRef = useRef(120)
   deleteRef.current = pendingDelete
 
   const changeTab = useCallback((next: Tab) => {
@@ -73,11 +78,19 @@ export default function App() {
     try {
       const meData = await api.me()
       setMe(meData)
-      const [meta, history, stats, voice] = await Promise.all([api.meta(), api.messages(), api.stats('week'),
-        api.voice().catch(() => ({ enabled: false, voice: 'xiaoyi' }))])
+      const [meta, history, stats, voice, pending] = await Promise.all([
+        api.meta(),
+        api.messages(),
+        api.stats('week'),
+        api.voice().catch(() => ({ enabled: false, voice: 'xiaoyi' })),
+        // 只要个数，用来在导航上给「待结清」一个提醒点
+        api.transactions({ pending: true, limit: 1 }).catch(() => ({ total: 0 })),
+      ])
       setCategories(meta.categories)
       setPayments(meta.payments)
       setMessages(history.messages)
+      setHasMore(Boolean(history.has_more))
+      setPendingCount(pending.total ?? 0)
       setVoiceEnabled(voice.enabled)
       setTodayTotal(stats.today_total)
       setWeekTotal(stats.current.total)
@@ -194,9 +207,51 @@ export default function App() {
   )
 
   const syncLedger = useCallback(async () => {
-    try { const history = await api.messages(); setMessages(history.messages); await refreshNumbers() }
-    catch (err) { setError(err instanceof Error ? err.message : '同步失败') }
+    try {
+      const history = await api.messages({ limit: loadedCountRef.current })
+      setMessages(history.messages)
+      await refreshNumbers()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '同步失败')
+    }
   }, [refreshNumbers])
+
+  /** 往上翻：用当前最早一条的 id 作为游标，只补更早的，不动已经渲染的。 */
+  const loadOlder = useCallback(async () => {
+    const oldest = messages.find((message) => message.id > 0)
+    if (!oldest || loadingMore) return
+    setLoadingMore(true)
+    try {
+      const result = await api.messages({ beforeId: oldest.id, limit: 50 })
+      setMessages((prev) => {
+        const seen = new Set(prev.map((message) => message.id))
+        return [...result.messages.filter((message) => !seen.has(message.id)), ...prev]
+      })
+      setHasMore(Boolean(result.has_more))
+      loadedCountRef.current = Math.min(200, loadedCountRef.current + result.messages.length)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '加载更早的对话失败')
+    } finally {
+      setLoadingMore(false)
+    }
+  }, [messages, loadingMore])
+
+  /** 对话内搜索：只在关键词变化时打接口，300ms 防抖。 */
+  useEffect(() => {
+    if (!searchOpen) return
+    const keyword = searchTerm.trim()
+    if (!keyword) {
+      setSearchResults(null)
+      return
+    }
+    const timer = window.setTimeout(() => {
+      void api
+        .messages({ q: keyword, limit: 50 })
+        .then((result) => setSearchResults(result.messages))
+        .catch(() => setSearchResults([]))
+    }, 300)
+    return () => window.clearTimeout(timer)
+  }, [searchOpen, searchTerm])
 
   useEffect(() => {
     if (!authed) return
@@ -310,7 +365,7 @@ export default function App() {
           <Logo />
           <div>
             <div className="text-[14px] font-semibold tracking-tight text-ink-900">{APP_NAME}</div>
-            <div className="text-[11px] text-ink-500">{APP_TAGLINE}</div>
+            <div className="text-[12px] text-ink-500">{APP_TAGLINE}</div>
           </div>
         </div>
 
@@ -328,7 +383,14 @@ export default function App() {
                     : 'text-ink-500 hover:bg-white/60 hover:text-ink-800'
                 }`}
               >
-                <Icon width={18} height={18} />
+                <span className="relative">
+                  <Icon width={18} height={18} />
+                  {item.key === 'bills' && pendingCount > 0 && (
+                    <span className="absolute -right-1.5 -top-1 flex h-3 min-w-3 items-center justify-center rounded-full bg-accent-600 px-0.5 text-[9px] font-medium leading-none text-white">
+                      {pendingCount > 9 ? '9+' : pendingCount}
+                    </span>
+                  )}
+                </span>
                 {item.label}
               </button>
             )
@@ -343,7 +405,7 @@ export default function App() {
             </div>
             <div className="mt-3 flex items-center justify-between border-t border-ink-50 pt-2.5 text-[12px]">
               <span className="text-ink-500">近 7 天</span>
-              <span className="font-num font-medium tabular-nums text-ink-700">¥{fmtMoney(weekTotal)}</span>
+              <Amount value={weekTotal} size={13} className="text-ink-700" />
             </div>
           </div>
 
@@ -359,7 +421,7 @@ export default function App() {
                     updateQuery({ cat: item.name, view: null })
                     setBillsKey((key) => key + 1)
                   }}
-                  className="flex h-7 w-7 items-center justify-center rounded-lg transition hover:scale-105"
+                  className="flex h-7 w-7 items-center justify-center rounded-xl transition hover:scale-105"
                   style={{ backgroundColor: tint(item.color, 0.92), color: mute(item.color, 0.18) }}
                 >
                   <CategoryIcon name={ICON_MAP[item.name] ?? item.icon} size={14} />
@@ -372,7 +434,7 @@ export default function App() {
         <div className="mt-auto pt-4">
           <button
             onClick={() => changeTab('me')}
-            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-[12px] text-ink-500 transition hover:bg-white hover:text-ink-800"
+            className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-[12px] text-ink-500 transition hover:bg-white hover:text-ink-800"
           >
             <IconUser width={14} height={14} />
             <span className="truncate">{me?.username ?? '我的账号'}</span>
@@ -386,22 +448,62 @@ export default function App() {
           <Logo size={26} />
           <div className="min-w-0 flex-1">
             <div className="text-[14px] font-semibold leading-tight tracking-tight">{APP_NAME}</div>
-            <div className="text-[11px] text-ink-500">今天 ¥{fmtMoney(todayTotal)}</div>
+            <div className="flex items-baseline gap-1 text-[12px] text-ink-500">
+              今天 <Amount value={todayTotal} size={12} className="text-ink-700" />
+            </div>
           </div>
         </header>
 
         {tab === 'chat' && (
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
             <div className="mx-auto w-full max-w-2xl px-4 pb-2 pt-5">
-              <div className="mb-4 flex items-center justify-between gap-2 text-[11px] text-ink-500"><span>收支 · 退款 · AA · 报销 · 预算 · 备忘提醒</span><button disabled={sending} onClick={() => void send('撤销上一步', [])} className="rounded-full bg-ink-50 px-2.5 py-1.5 text-ink-500 hover:bg-ink-100 disabled:opacity-40">撤销上一步</button></div>
-              {messages.length === 0 ? (
-                <EmptyState
-                  todayTotal={todayTotal}
-                  onPick={(text) => void send(text, [])}
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <span className="truncate text-[12px] text-ink-500">
+                  {searchResults ? `找到 ${searchResults.length} 条对话` : '收支 · 退款 · AA · 报销 · 预算 · 提醒'}
+                </span>
+                <button
+                  onClick={() => {
+                    setSearchOpen((value) => !value)
+                    setSearchTerm('')
+                    setSearchResults(null)
+                  }}
+                  aria-expanded={searchOpen}
+                  aria-label={searchOpen ? '关闭对话搜索' : '搜索对话'}
+                  className="flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1.5 text-[12px] text-ink-500 transition hover:bg-ink-50 hover:text-ink-800"
+                >
+                  <IconSearch width={14} height={14} />
+                  {searchOpen ? '关闭' : '搜索'}
+                </button>
+              </div>
+
+              {searchOpen && (
+                <input
+                  autoFocus
+                  value={searchTerm}
+                  onChange={(event) => setSearchTerm(event.target.value)}
+                  placeholder="搜对话内容，比如「海底捞」「报销」"
+                  aria-label="搜索对话内容"
+                  className="mb-3 w-full rounded-xl bg-ink-50 px-3 py-2 text-[13px] text-ink-800 outline-none placeholder:text-ink-400 focus:bg-white focus:ring-1 focus:ring-ink-200"
                 />
+              )}
+
+              {searchResults === null && messages.length === 0 ? (
+                <EmptyState onPick={(text) => void send(text, [])} onStart={() => composerRef.current?.focus()} />
               ) : (
                 <div className="space-y-5">
-                  {messages.map((message) => (
+                  {searchResults === null && hasMore && (
+                    <div className="text-center">
+                      <button
+                        onClick={() => void loadOlder()}
+                        disabled={loadingMore}
+                        className="rounded-full bg-ink-50 px-3 py-1.5 text-[12px] text-ink-500 transition hover:bg-ink-100 disabled:opacity-50"
+                      >
+                        {loadingMore ? '正在加载…' : '加载更早的对话'}
+                      </button>
+                    </div>
+                  )}
+
+                  {(searchResults ?? messages).map((message) => (
                     <MessageBubble
                       key={message.id}
                       message={message}
@@ -414,7 +516,26 @@ export default function App() {
                       disabled={sending}
                     />
                   ))}
-                  {sending && (
+
+                  {/* 放在最新一条之后：进对话默认滚到底，放顶部等于永远看不到 */}
+                  {searchResults === null && (
+                    <WeeklyDigest
+                      onShown={() => bottomRef.current?.scrollIntoView({ block: 'end' })}
+                      onOpenReport={() => {
+                        changeTab('bills')
+                        updateQuery({ view: 'report' })
+                        setBillsKey((key) => key + 1)
+                      }}
+                    />
+                  )}
+
+                  {searchResults !== null && searchResults.length === 0 && (
+                    <p className="py-10 text-center text-[13px] text-ink-500">
+                      {searchTerm.trim() ? '没有找到包含这个词的对话' : '输入关键词，搜你说过的话'}
+                    </p>
+                  )}
+
+                  {searchResults === null && sending && (
                     <div className="flex animate-rise gap-2.5">
                       <img src={assistantAvatar} alt="小助手" className="mt-0.5 h-7 w-7 shrink-0 rounded-full object-cover" />
                       <div className="flex items-center gap-1 pt-1.5">
@@ -460,6 +581,7 @@ export default function App() {
         {tab === 'me' && (
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
             <div className="mx-auto max-w-2xl space-y-4 px-4 py-4">
+              <div className="px-1 text-[12px] font-medium tracking-wide text-ink-400">账号</div>
               <AccountCard username={me?.username ?? ''} onLogout={() => void logout()} />
               <MoneyPanel
                 categories={categoryNames}
@@ -470,7 +592,12 @@ export default function App() {
                 onToggleVoice={() => void toggleVoice()}
               />
               {/* 账号管理只给 admin；预算与记账习惯是每个租户自己的 */}
-              {me?.username === 'admin' && <UsersPanel />}
+              {me?.username === 'admin' && (
+                <>
+                  <div className="px-1 text-[12px] font-medium tracking-wide text-ink-400">系统</div>
+                  <UsersPanel />
+                </>
+              )}
             </div>
           </div>
         )}
@@ -479,7 +606,7 @@ export default function App() {
           <div className="shrink-0">
             {error && (
               <div className="mx-auto mb-1 w-full max-w-2xl px-4">
-                <div className="rounded-lg bg-red-50 px-3 py-1.5 text-[12px] text-red-600">{error}</div>
+                <div className="rounded-xl bg-red-50 px-3 py-1.5 text-[12px] text-red-600">{error}</div>
               </div>
             )}
             {voiceTapUrl && (
@@ -491,13 +618,13 @@ export default function App() {
                     setVoiceTapUrl(null)
                     void audio.play()
                   }}
-                  className="rounded-full bg-accent-600 px-2.5 py-1.5 text-[11px] font-medium text-white"
+                  className="rounded-full bg-accent-600 px-2.5 py-1.5 text-[12px] font-medium text-white"
                 >
                   播放语音
                 </button>
               </div>
             )}
-            <Composer onSend={send} disabled={sending} />
+            <Composer onSend={send} disabled={sending} inputRef={composerRef} />
           </div>
         )}
       </main>
@@ -512,11 +639,18 @@ export default function App() {
               key={item.key}
               onClick={() => changeTab(item.key)}
               aria-current={active ? 'page' : undefined}
-              className={`flex flex-1 flex-col items-center gap-0.5 py-1.5 text-[11px] font-medium transition ${
+              className={`flex flex-1 flex-col items-center gap-0.5 py-1.5 text-[12px] font-medium transition ${
                 active ? 'text-accent-700' : 'text-ink-500'
               }`}
             >
-              <Icon width={20} height={20} />
+              <span className="relative">
+                <Icon width={20} height={20} />
+                {item.key === 'bills' && pendingCount > 0 && (
+                  <span className="absolute -right-1.5 -top-1 flex h-3 min-w-3 items-center justify-center rounded-full bg-accent-600 px-0.5 text-[9px] font-medium leading-none text-white">
+                    {pendingCount > 9 ? '9+' : pendingCount}
+                  </span>
+                )}
+              </span>
               {item.label}
             </button>
           )
@@ -539,72 +673,40 @@ function Logo({ size = 30 }: { size?: number }) {
   )
 }
 
-function EmptyState({ todayTotal, onPick }: { todayTotal: number; onPick: (text: string) => void }) {
+function EmptyState({ onPick, onStart }: { onPick: (text: string) => void; onStart: () => void }) {
   return (
-    <div className="pt-6 sm:pt-14">
+    <div className="pb-6 pt-1 sm:pt-6">
       <img src={assistantAvatar} alt={APP_NAME} className="mx-auto h-12 w-12 rounded-full object-cover shadow-float" />
-      <h1 className="mt-4 text-center text-[19px] font-semibold tracking-tight text-ink-900">
-        今天花了多少？
-      </h1>
+      <h1 className="mt-4 text-center text-[19px] font-semibold tracking-tight text-ink-900">今天花了多少？</h1>
       <p className="mx-auto mt-1.5 max-w-[300px] text-center text-[13px] leading-relaxed text-ink-500">
         说一句话、发一张小票照片，我来帮你记、帮你分类、帮你算清楚。
       </p>
 
-      {todayTotal > 0 && (
-        <div className="mx-auto mt-5 w-fit rounded-full bg-ink-50 px-3.5 py-1.5 text-[12px] text-ink-500">
-          今天已记 <b className="font-num font-semibold text-ink-900">¥{fmtMoney(todayTotal)}</b>
-        </div>
-      )}
-
-      <div className="mx-auto mt-7 grid max-w-[420px] grid-cols-1 gap-2 sm:grid-cols-2">
-        {SUGGESTIONS.map((text) => (
-          <button
-            key={text}
-            onClick={() => onPick(text)}
-            className="group flex items-center gap-2.5 rounded-xl border border-ink-100 bg-white px-3.5 py-3 text-left transition hover:border-ink-200 hover:shadow-card"
-          >
-            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-ink-50 text-ink-500 transition group-hover:bg-ink-900 group-hover:text-white">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
-                <path d="M12 5v14M5 12h14" />
-              </svg>
-            </span>
-            <span className="truncate text-[13px] text-ink-700">{text}</span>
-          </button>
-        ))}
+      <div className="mt-5 flex justify-center">
+        <button
+          onClick={onStart}
+          className="flex items-center gap-1.5 rounded-full bg-accent-600 px-4 py-2.5 text-[13px] font-medium text-white transition hover:bg-accent-700"
+        >
+          <IconPlus width={15} height={15} />
+          记第一笔
+        </button>
       </div>
 
-      <MiniWeekly />
-    </div>
-  )
-}
-
-function MiniWeekly() {
-  const [series, setSeries] = useState<{ date: string; value: number }[]>([])
-  useEffect(() => {
-    void api
-      .stats('week')
-      .then((data) => setSeries(data.daily))
-      .catch(() => undefined)
-  }, [])
-  const total = series.reduce((sum, item) => sum + item.value, 0)
-  if (series.length === 0 || total === 0) return null
-
-  const max = Math.max(...series.map((item) => item.value), 1)
-
-  // 纯 CSS 柱状图：这 7 根柱子以前会把整个 ECharts（约 180KB gzip）拖进首屏
-  return (
-    <div className="mx-auto mt-8 max-w-[420px] rounded-2xl border border-ink-100 bg-white p-4">
-      <div className="flex items-baseline justify-between">
-        <span className="text-[12px] text-ink-500">近 7 天</span>
-        <span className="font-num text-[13px] font-semibold tabular-nums">¥{fmtMoney(total)}</span>
-      </div>
-      <div className="mt-2 flex h-[54px] items-end gap-1.5">
-        {series.map((item) => (
-          <div key={item.date} className="group flex-1" title={`${item.date.slice(5)}　¥${fmtMoney(item.value)}`}>
-            <div
-              className="w-full rounded-t bg-ink-200 transition-colors group-hover:bg-accent"
-              style={{ height: `${Math.max(3, Math.round((item.value / max) * 54))}px` }}
-            />
+      <div className="mt-7 grid gap-4 sm:grid-cols-3 sm:gap-5">
+        {SUGGESTION_GROUPS.map((group) => (
+          <div key={group.title}>
+            <div className="mb-1 px-2 text-[12px] font-medium tracking-wide text-ink-400">{group.title}</div>
+            <div className="space-y-0.5">
+              {group.items.map((text) => (
+                <button
+                  key={text}
+                  onClick={() => onPick(text)}
+                  className="w-full truncate rounded-xl px-2 py-2 text-left text-[12px] text-ink-600 transition hover:bg-ink-50 hover:text-ink-900"
+                >
+                  {text}
+                </button>
+              ))}
+            </div>
           </div>
         ))}
       </div>

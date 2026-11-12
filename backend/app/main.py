@@ -470,15 +470,28 @@ def get_upload(name: str, user=Depends(current_user)):
 
 
 @app.get("/api/messages")
-def list_messages(user=Depends(current_user), db: Session = Depends(get_db)):
-    rows = list(
-        db.scalars(
-            select(Message)
-            .where(Message.user_id == user.id)
-            .order_by(Message.id.desc())
-            .limit(120)
-        ).all()
-    )
+def list_messages(
+    before_id: int | None = None,
+    q: str = "",
+    limit: int = 120,
+    user=Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    """对话记录，默认最近 120 条。
+
+    before_id 用于「加载更早」，q 用于对话内搜索；两者都只影响读取范围，
+    不改变已有调用（不带参数时行为与之前一致）。
+    """
+    take = max(1, min(limit, 200))
+    stmt = select(Message).where(Message.user_id == user.id)
+    if before_id:
+        stmt = stmt.where(Message.id < before_id)
+    keyword = (q or "").strip()
+    if keyword:
+        stmt = stmt.where(Message.content.contains(keyword))
+    rows = list(db.scalars(stmt.order_by(Message.id.desc()).limit(take + 1)).all())
+    has_more = len(rows) > take
+    rows = rows[:take]
     live = {row.id: row for row in load_transactions(db, user.id, {})}
     out = []
     for row in reversed(rows):
@@ -507,7 +520,7 @@ def list_messages(user=Depends(current_user), db: Session = Depends(get_db)):
                 "createdAt": row.created_at.strftime("%Y-%m-%d %H:%M"),
             }
         )
-    return {"messages": out}
+    return {"messages": out, "has_more": has_more}
 
 
 @app.delete("/api/messages")

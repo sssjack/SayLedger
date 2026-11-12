@@ -4,13 +4,15 @@ import { TransactionCard } from './TransactionCard'
 import { QuickEntry } from './QuickEntry'
 import { FilterChip } from './FilterChip'
 import { EmptyState } from './EmptyState'
+import { SettlementBar } from './SettlementBar'
+import { BudgetStrip } from './BudgetStrip'
 import { StatsNote } from './StatsNote'
 import { UndoToast } from './UndoToast'
 import { Amount } from './Amount'
 import { periodLabel, rangeOf, type Period } from './PeriodPicker'
 import { readQuery, updateQuery } from '../urlState'
-import { fmtDateLabel, fmtMoney, groupByDate } from '../utils'
-import { IconClose, IconInbox } from '../icons'
+import { fmtDateLabel, groupByDate } from '../utils'
+import { IconClose, IconInbox, IconMore, IconPlus, IconSearch } from '../icons'
 
 type Props = {
   period: Period
@@ -42,6 +44,19 @@ export function BillsPanel({ period, categories, payments, refreshKey, onChanged
   const [count, setCount] = useState(0)
   const [error, setError] = useState('')
   const [showEntry, setShowEntry] = useState(false)
+  const [searchOpen, setSearchOpen] = useState(Boolean(initialQuery.get('q')))
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [showNote, setShowNote] = useState(false)
+
+  // 弹层要能用 Esc 关掉，不然键盘用户只能去点遮罩
+  useEffect(() => {
+    if (!showEntry) return
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setShowEntry(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [showEntry])
   const [pendingDelete, setPendingDelete] = useState<{ id: number } | null>(null)
   const version = useRef(0)
   const timerRef = useRef<number | null>(null)
@@ -210,31 +225,92 @@ export function BillsPanel({ period, categories, payments, refreshKey, onChanged
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between gap-2 px-1 text-[12px]">
-        <span className="text-ink-500">{filtersActive ? `筛选命中 ${count} 笔` : ''}</span>
-        <div className="flex items-center gap-3">
-          <a href={`${BASE}/api/export?${exportParams}`} download className="text-ink-500 hover:text-ink-800">
-            导出 CSV
-          </a>
-          <button onClick={() => setShowEntry((value) => !value)} className="font-medium text-accent-700">
-            {showEntry ? '收起' : '手动记一笔'}
+      <div className="flex items-center justify-between gap-2 px-1">
+        <span className="text-[12px] text-ink-500">{filtersActive ? `筛选命中 ${count} 笔` : ''}</span>
+        <div className="flex items-center gap-0.5">
+          <button
+            onClick={() => setSearchOpen((value) => !value)}
+            aria-expanded={searchOpen}
+            aria-label={searchOpen ? '关闭搜索' : '搜索流水'}
+            className="flex h-8 w-8 items-center justify-center rounded-full text-ink-500 transition hover:bg-ink-100 hover:text-ink-800"
+          >
+            <IconSearch width={16} height={16} />
           </button>
+          <button
+            onClick={() => setShowEntry(true)}
+            className="flex h-8 items-center gap-1 rounded-full bg-accent-600 px-2.5 text-[12px] font-medium text-white transition hover:bg-accent-700"
+          >
+            <IconPlus width={14} height={14} />
+            记一笔
+          </button>
+          <div className="relative">
+            <button
+              onClick={() => setMenuOpen((value) => !value)}
+              aria-expanded={menuOpen}
+              aria-label="更多操作"
+              className="flex h-8 w-8 items-center justify-center rounded-full text-ink-500 transition hover:bg-ink-100 hover:text-ink-800"
+            >
+              <IconMore width={16} height={16} />
+            </button>
+            {menuOpen && (
+              <>
+                <button aria-hidden tabIndex={-1} onClick={() => setMenuOpen(false)} className="fixed inset-0 z-20 cursor-default" />
+                <div className="absolute right-0 top-9 z-30 w-44 overflow-hidden rounded-xl border border-ink-100 bg-white py-1 shadow-float">
+                  <a href={`${BASE}/api/export?${exportParams}`} download className="block px-3 py-2 text-[12px] text-ink-700 hover:bg-ink-50">
+                    导出 CSV
+                  </a>
+                  <button
+                    onClick={() => {
+                      setShowNote((value) => !value)
+                      setMenuOpen(false)
+                    }}
+                    className="block w-full px-3 py-2 text-left text-[12px] text-ink-700 hover:bg-ink-50"
+                  >
+                    统计口径
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </div>
 
       {showEntry && (
-        <QuickEntry
-          categories={categories}
-          payments={payments.map((item) => item.name)}
-          onDone={() => {
-            setShowEntry(false)
-            void load()
-            onChanged()
-          }}
-        />
+        <div
+          className="fixed inset-0 z-40 flex items-end justify-center bg-ink-900/25 sm:items-center sm:px-4"
+          onClick={() => setShowEntry(false)}
+          role="dialog"
+          aria-modal="true"
+          aria-label="手动记一笔"
+        >
+          <div className="w-full max-w-md" onClick={(event) => event.stopPropagation()}>
+            <div className="flex justify-end pb-1.5">
+              <button
+                onClick={() => setShowEntry(false)}
+                aria-label="关闭记账面板"
+                className="flex h-7 w-7 items-center justify-center rounded-full bg-white/90 text-ink-500 shadow-sm transition hover:text-ink-900"
+              >
+                <IconClose width={13} height={13} />
+              </button>
+            </div>
+            <QuickEntry
+              categories={categories}
+              payments={payments.map((item) => item.name)}
+              onDone={() => {
+                setShowEntry(false)
+                void load()
+                onChanged()
+              }}
+            />
+          </div>
+        </div>
       )}
 
       {error && <div role="alert" className="rounded-xl bg-red-50 p-3 text-[12px] text-red-600">{error}</div>}
+
+      <SettlementBar refreshKey={refreshKey} onShow={() => setPendingOnly(true)} />
+
+      <BudgetStrip refreshKey={refreshKey} />
 
       <div className="card p-4">
         <div className="flex items-start justify-between gap-3">
@@ -246,10 +322,10 @@ export function BillsPanel({ period, categories, payments, refreshKey, onChanged
             </div>
             {overview && overview.current.count > 0 && (
               <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[12px] text-ink-500">
-                <span>均 ¥{fmtMoney(overview.current.average)}</span>
+                <span className="flex items-baseline gap-0.5">均<Amount value={overview.current.average} size={12} className="text-ink-500" /></span>
                 {change !== 0 && (
                   <span
-                    className={`inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[11px] font-medium ${
+                    className={`inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[12px] font-medium ${
                       change > 0 ? 'bg-red-50 text-red-500' : 'bg-emerald-50 text-emerald-600'
                     }`}
                   >
@@ -261,35 +337,39 @@ export function BillsPanel({ period, categories, payments, refreshKey, onChanged
             )}
           </div>
           <div className="shrink-0 space-y-0.5 text-right text-[12px]">
-            <div className="text-ink-500">
-              收入 <span className="font-num font-medium text-emerald-600">¥{fmtMoney(overview?.current.income ?? 0)}</span>
+            <div className="flex items-baseline justify-end gap-1 text-ink-500">
+              收入 <Amount value={overview?.current.income ?? 0} size={13} className="text-emerald-600" />
             </div>
-            <div className="text-ink-500">
-              结余 <span className="font-num font-medium text-ink-900">¥{fmtMoney(overview?.current.balance ?? 0)}</span>
+            <div className="flex items-baseline justify-end gap-1 text-ink-500">
+              结余 <Amount value={overview?.current.balance ?? 0} size={13} className="text-ink-900" />
             </div>
           </div>
         </div>
 
-        <div className="relative mt-3">
-          <input
-            value={keywordInput}
-            onChange={(event) => setKeywordInput(event.target.value)}
-            placeholder="搜商户、备注、商品名"
-            aria-label="搜索流水"
-            className="w-full rounded-xl bg-ink-50 py-2 pl-3 pr-8 text-[13px] text-ink-800 placeholder:text-ink-400 focus:bg-white focus:ring-1 focus:ring-ink-200"
-          />
-          {keywordInput && (
-            <button
-              onClick={() => setKeywordInput('')}
-              aria-label="清空搜索"
-              className="absolute right-2 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-full text-ink-400 hover:bg-ink-100"
-            >
-              <IconClose width={12} height={12} />
-            </button>
-          )}
-        </div>
+        {searchOpen && (
+          <div className="relative mt-3">
+            <IconSearch width={14} height={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-400" />
+            <input
+              autoFocus
+              value={keywordInput}
+              onChange={(event) => setKeywordInput(event.target.value)}
+              placeholder="搜商户、备注、商品名"
+              aria-label="搜索流水"
+              className="w-full rounded-xl bg-ink-50 py-2 pl-9 pr-8 text-[13px] text-ink-800 placeholder:text-ink-400 focus:bg-white focus:ring-1 focus:ring-ink-200"
+            />
+            {keywordInput && (
+              <button
+                onClick={() => setKeywordInput('')}
+                aria-label="清空搜索"
+                className="absolute right-2 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-full text-ink-400 hover:bg-ink-100"
+              >
+                <IconClose width={12} height={12} />
+              </button>
+            )}
+          </div>
+        )}
 
-        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+        <div className="mt-3 flex flex-wrap items-center gap-1.5">
           {categoryFilter && (
             <button
               onClick={() => setCategoryFilter('')}
@@ -316,31 +396,32 @@ export function BillsPanel({ period, categories, payments, refreshKey, onChanged
             只看待结清
           </button>
           {filtersActive && (
-            <button onClick={clearFilters} className="ml-auto text-[11px] text-ink-500 hover:text-ink-800">
+            <button onClick={clearFilters} className="ml-auto text-[12px] text-ink-500 hover:text-ink-800">
               清空筛选
             </button>
           )}
         </div>
 
         {filtersActive && (
-          <div className="mt-2 flex items-center justify-between rounded-lg bg-ink-50 px-2.5 py-1.5 text-[12px]">
-            <span className="text-ink-600">
-              筛选结果合计 <b className="font-num text-ink-900">¥{fmtMoney(stats?.total ?? 0)}</b>
+          <div className="mt-2 flex items-center justify-between rounded-xl bg-ink-50 px-2.5 py-1.5 text-[12px]">
+            <span className="flex items-baseline gap-1 text-ink-600">
+              筛选结果合计 <Amount value={stats?.total ?? 0} size={13} className="text-ink-900" />
             </span>
             <span className="text-ink-500">{stats?.count ?? 0} 笔</span>
           </div>
         )}
-
-        <div className="mt-2 border-t border-ink-50 pt-2">
-          <StatsNote
-            items={[
-              '净支出 = 个人承担 − 当期退款；代垫、借还款与账户转账不计入。',
-              '顶部数字按整个周期统计，不随搜索和筛选变化；筛选命中另算「筛选结果合计」。',
-              '环比对比前一个等长周期。',
-            ]}
-          />
-        </div>
       </div>
+
+      {showNote && (
+        <StatsNote
+          defaultOpen
+          items={[
+            '净支出 = 个人承担 − 当期退款；代垫、借还款与账户转账不计入。',
+            '顶部数字按整个周期统计，不随搜索和筛选变化；筛选命中另算「筛选结果合计」。',
+            '环比对比前一个等长周期。',
+          ]}
+        />
+      )}
 
       {loading && items.length === 0 && <div className="py-10 text-center text-[13px] text-ink-500">加载中…</div>}
 
@@ -356,7 +437,7 @@ export function BillsPanel({ period, categories, payments, refreshKey, onChanged
           <EmptyState
             icon={<IconInbox width={20} height={20} />}
             title="这段时间还没有记录"
-            hint="回到对话说一句「午饭 28」，或者点上面的手动记一笔"
+            hint="回到对话说一句「午饭 28」，或者点右上角「记一笔」"
           />
         )
       )}
@@ -365,9 +446,7 @@ export function BillsPanel({ period, categories, payments, refreshKey, onChanged
         <div key={group.date} className="space-y-1.5">
           <div className="flex items-baseline justify-between px-1">
             <span className="text-[12px] font-medium text-ink-500">{fmtDateLabel(group.date)}</span>
-            <span className="font-num text-[11px] tabular-nums text-ink-400">
-              ¥{fmtMoney(group.items.reduce((sum, item) => sum + item.expenseAmount, 0))}
-            </span>
+            <Amount value={group.items.reduce((sum, item) => sum + item.expenseAmount, 0)} size={11} className="text-ink-400" />
           </div>
           <div className="space-y-1.5">
             {group.items.map((tx) => (

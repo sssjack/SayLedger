@@ -112,7 +112,7 @@ export function TransactionCard({ tx, categories, payments, onUpdate, onDelete, 
           <div className="space-y-2 px-3 py-2.5">
             <div className="flex flex-wrap gap-1">
               {(Object.entries(KIND_LABELS) as [TransactionKind, string][]).filter(([key]) => !['refund', 'collection', 'loan_repayment'].includes(key) || key === tx.kind).map(([key, label]) => (
-                <button key={key} disabled={!!tx.relatedId} onClick={() => setKind(key)} className={`rounded-full px-2 py-1 text-[11px] transition ${kind === key ? 'bg-accent-600 text-white' : 'bg-ink-50 text-ink-500 hover:bg-ink-100'}`}>{label}</button>
+                <button key={key} disabled={!!tx.relatedId} onClick={() => setKind(key)} className={`rounded-full px-2 py-1 text-[12px] transition ${kind === key ? 'bg-accent-600 text-white' : 'bg-ink-50 text-ink-500 hover:bg-ink-100'}`}>{label}</button>
               ))}
             </div>
             <div className="flex items-center gap-2">
@@ -123,14 +123,14 @@ export function TransactionCard({ tx, categories, payments, onUpdate, onDelete, 
                 aria-label="金额"
                 value={amount}
                 onChange={(event) => setAmount(event.target.value)}
-                className="w-20 rounded-lg border border-ink-200 px-2 py-1 text-sm focus:border-ink-900"
+                className="w-20 rounded-xl border border-ink-200 px-2 py-1 text-sm focus:border-ink-900"
               />
               <input
                 value={note}
                 onChange={(event) => setNote(event.target.value)}
                 aria-label="描述"
                 placeholder="描述"
-                className="min-w-0 flex-1 rounded-lg border border-ink-200 px-2 py-1 text-sm focus:border-ink-900"
+                className="min-w-0 flex-1 rounded-xl border border-ink-200 px-2 py-1 text-sm focus:border-ink-900"
               />
             </div>
 
@@ -139,7 +139,7 @@ export function TransactionCard({ tx, categories, payments, onUpdate, onDelete, 
                 <button
                   key={item}
                   onClick={() => setCategory(item)}
-                  className={`rounded-full px-2 py-0.5 text-[11px] transition ${
+                  className={`rounded-full px-2 py-0.5 text-[12px] transition ${
                     category === item ? 'bg-accent-600 text-white' : 'bg-ink-50 text-ink-500 hover:bg-ink-100'
                   }`}
                 >
@@ -149,12 +149,12 @@ export function TransactionCard({ tx, categories, payments, onUpdate, onDelete, 
             </div>
 
             <div className="flex flex-wrap items-center gap-1">
-              <span className="mr-1 shrink-0 text-[11px] text-ink-500">付款</span>
+              <span className="mr-1 shrink-0 text-[12px] text-ink-500">付款</span>
               {payments.map((item) => (
                 <button
                   key={item}
                   onClick={() => setPayment(payment === item ? '' : item)}
-                  className={`rounded-full px-2 py-0.5 text-[11px] transition ${
+                  className={`rounded-full px-2 py-0.5 text-[12px] transition ${
                     payment === item ? 'bg-accent-600 text-white' : 'bg-ink-50 text-ink-500 hover:bg-ink-100'
                   }`}
                 >
@@ -163,7 +163,7 @@ export function TransactionCard({ tx, categories, payments, onUpdate, onDelete, 
               ))}
             </div>
 
-            <button onClick={() => setMore((value) => !value)} className="flex items-center gap-1 text-[11px] text-ink-500 hover:text-ink-700">
+            <button onClick={() => setMore((value) => !value)} className="flex items-center gap-1 text-[12px] text-ink-500 hover:text-ink-700">
               <IconChevron width={12} height={12} className={`transition ${more ? 'rotate-90' : ''}`} />
               {more ? '收起更多字段' : '商户、日期、对方、事件、备注'}
             </button>
@@ -173,22 +173,22 @@ export function TransactionCard({ tx, categories, payments, onUpdate, onDelete, 
                 {kind === 'expense' && (
                   <label className="flex items-center gap-2 text-[12px] text-ink-500">
                     个人承担
-                    <input aria-label="个人承担金额" inputMode="decimal" value={own} onChange={(e) => setOwn(e.target.value)} className="w-24 rounded-lg border border-ink-200 px-2 py-1 text-ink-900" />
+                    <input aria-label="个人承担金额" inputMode="decimal" value={own} onChange={(e) => setOwn(e.target.value)} className="w-24 rounded-xl border border-ink-200 px-2 py-1 text-ink-900" />
                     <span>其余记为待收回款</span>
                   </label>
                 )}
                 <div className="grid grid-cols-2 gap-2">
-                  <input aria-label="商户" placeholder="商户" value={merchant} onChange={(e) => setMerchant(e.target.value)} className="min-w-0 rounded-lg border border-ink-200 px-2 py-1 text-[12px]" />
-                  <input aria-label="日期" type="date" value={date} onChange={(e) => setDate(e.target.value)} className="min-w-0 rounded-lg border border-ink-200 px-2 py-1 text-[12px]" />
-                  <input aria-label="对方姓名或公司" placeholder="对方姓名或公司" value={counterparty} onChange={(e) => setCounterparty(e.target.value)} className="min-w-0 rounded-lg border border-ink-200 px-2 py-1 text-[12px]" />
-                  <input aria-label="事件标签" placeholder="事件标签，如杭州出差" value={event} onChange={(e) => setEvent(e.target.value)} className="min-w-0 rounded-lg border border-ink-200 px-2 py-1 text-[12px]" />
+                  <input aria-label="商户" placeholder="商户" value={merchant} onChange={(e) => setMerchant(e.target.value)} className="min-w-0 rounded-xl border border-ink-200 px-2 py-1 text-[12px]" />
+                  <input aria-label="日期" type="date" value={date} onChange={(e) => setDate(e.target.value)} className="min-w-0 rounded-xl border border-ink-200 px-2 py-1 text-[12px]" />
+                  <input aria-label="对方姓名或公司" placeholder="对方姓名或公司" value={counterparty} onChange={(e) => setCounterparty(e.target.value)} className="min-w-0 rounded-xl border border-ink-200 px-2 py-1 text-[12px]" />
+                  <input aria-label="事件标签" placeholder="事件标签，如杭州出差" value={event} onChange={(e) => setEvent(e.target.value)} className="min-w-0 rounded-xl border border-ink-200 px-2 py-1 text-[12px]" />
                 </div>
                 <input
                   value={remark}
                   onChange={(event) => setRemark(event.target.value)}
                   aria-label="备注"
                   placeholder="备注（和谁、是否报销、发票号…）"
-                  className="w-full rounded-lg border border-ink-200 px-2 py-1 text-[12px] placeholder:text-ink-400 focus:border-ink-900"
+                  className="w-full rounded-xl border border-ink-200 px-2 py-1 text-[12px] placeholder:text-ink-400 focus:border-ink-900"
                 />
               </div>
             )}
@@ -213,7 +213,7 @@ export function TransactionCard({ tx, categories, payments, onUpdate, onDelete, 
             className="flex w-full items-center gap-3 px-3 py-2.5 text-left"
           >
             <span
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl"
               style={{ backgroundColor: tint(tx.categoryColor, 0.92), color: mute(tx.categoryColor, 0.18) }}
             >
               <CategoryIcon name={iconFor(tx.category)} size={16} />
@@ -221,14 +221,11 @@ export function TransactionCard({ tx, categories, payments, onUpdate, onDelete, 
             <span className="min-w-0 flex-1">
               <span className="flex items-baseline gap-1.5">
                 <span className="truncate text-[13px] font-medium text-ink-900">{title}</span>
-                {tx.merchant && tx.note && <span className="truncate text-[11px] text-ink-500">{tx.note}</span>}
+                {tx.merchant && tx.note && <span className="truncate text-[12px] text-ink-500">{tx.note}</span>}
               </span>
-              <span className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px] text-ink-500">
+              {/* 主行只留「商户 + 金额」，副行只留「分类 · 时间」；付款方式、对方、事件都收进详情 */}
+              <span className="mt-0.5 flex items-center gap-1.5 text-[12px] text-ink-500">
                 <span>{tx.category}</span>
-                <span className="rounded bg-ink-50 px-1 text-ink-600">{KIND_LABELS[tx.kind] || '支出'}</span>
-                {tx.counterparty && <span>{tx.counterparty}</span>}
-                {tx.transferTo && <span>→ {tx.transferTo}</span>}
-                {tx.relatedId && <span>关联 #{tx.relatedId}</span>}
                 <span className="text-ink-200">·</span>
                 <span>{tx.date.slice(5).replace('-', '/')}</span>
                 {time && (
@@ -237,19 +234,8 @@ export function TransactionCard({ tx, categories, payments, onUpdate, onDelete, 
                     <span>{time}</span>
                   </>
                 )}
-                {tx.paymentMethod && (
-                  <>
-                    <span className="text-ink-200">·</span>
-                    <span className="rounded px-1" style={{ backgroundColor: `${tx.paymentColor}12`, color: tx.paymentColor }}>
-                      {tx.paymentMethod}
-                    </span>
-                  </>
-                )}
                 {tx.event && (
-                  <>
-                    <span className="text-ink-200">·</span>
-                    <span className="rounded bg-ink-50 px-1 text-ink-500">{tx.event}</span>
-                  </>
+                  <span className="ml-0.5 max-w-[7em] truncate rounded bg-ink-50 px-1 text-ink-500">{tx.event}</span>
                 )}
               </span>
             </span>
@@ -283,11 +269,11 @@ export function TransactionCard({ tx, categories, payments, onUpdate, onDelete, 
           </dl>
 
           {(tx.recoverableAmount > 0 || tx.refundedAmount > 0) && (
-            <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-ink-500">
-              {tx.refundedAmount > 0 && <span>已退款 ¥{fmtMoney(tx.refundedAmount)}</span>}
+            <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[12px] text-ink-500">
+              {tx.refundedAmount > 0 && <span>已退款 <Amount value={tx.refundedAmount} size={12} /></span>}
               {tx.recoverableAmount > 0 && (
                 <span className={tx.outstandingAmount > 0 ? 'text-amber-700' : 'text-emerald-600'}>
-                  {tx.outstandingAmount > 0 ? (tx.kind === 'borrow' ? '待归还' : '待收回') : '已结清'} ¥{fmtMoney(tx.outstandingAmount)}
+                  {tx.outstandingAmount > 0 ? (tx.kind === 'borrow' ? '待归还' : '待收回') : '已结清'} <Amount value={tx.outstandingAmount} size={12} />
                 </span>
               )}
             </div>
@@ -299,8 +285,8 @@ export function TransactionCard({ tx, categories, payments, onUpdate, onDelete, 
               className="mt-2 flex flex-wrap items-center gap-2 rounded-xl bg-ink-50 p-2 text-[12px]"
             >
               <span>{action === 'refund' ? '退款' : tx.kind === 'borrow' ? '还款' : '回款'}金额</span>
-              <input aria-label="退款或结算金额" inputMode="decimal" value={actionAmount} onChange={(event) => setActionAmount(event.target.value)} className="w-24 rounded-lg border border-ink-200 px-2 py-1" />
-              <button disabled={busy} type="submit" className="rounded-lg bg-accent-600 px-2.5 py-1 text-white disabled:opacity-50">{busy ? '保存中' : '确认'}</button>
+              <input aria-label="退款或结算金额" inputMode="decimal" value={actionAmount} onChange={(event) => setActionAmount(event.target.value)} className="w-24 rounded-xl border border-ink-200 px-2 py-1" />
+              <button disabled={busy} type="submit" className="rounded-xl bg-accent-600 px-2.5 py-1 text-white disabled:opacity-50">{busy ? '保存中' : '确认'}</button>
               <button type="button" onClick={() => setAction(null)} className="text-ink-500">取消</button>
             </form>
           )}
@@ -351,7 +337,7 @@ export function TransactionCard({ tx, categories, payments, onUpdate, onDelete, 
 function Field({ label, value, className = '' }: { label: string; value: string; className?: string }) {
   return (
     <div className={className}>
-      <dt className="text-[11px] text-ink-400">{label}</dt>
+      <dt className="text-[12px] text-ink-400">{label}</dt>
       <dd className="mt-0.5 break-words text-ink-800">{value}</dd>
     </div>
   )

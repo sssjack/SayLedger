@@ -148,7 +148,7 @@ export function PeriodPicker({ period, onChange, label, modes, className = '' }:
             value={period.start}
             max={period.end}
             onChange={(event) => onChange({ ...period, start: event.target.value })}
-            className="rounded-lg border border-ink-200 px-2.5 py-1.5 text-[13px] text-ink-800 focus:border-ink-900"
+            className="rounded-xl border border-ink-200 px-2.5 py-1.5 text-[13px] text-ink-800 focus:border-ink-900"
           />
           <span className="text-[12px] text-ink-500">至</span>
           <input
@@ -158,7 +158,7 @@ export function PeriodPicker({ period, onChange, label, modes, className = '' }:
             min={period.start}
             max={todayISO()}
             onChange={(event) => onChange({ ...period, end: event.target.value })}
-            className="rounded-lg border border-ink-200 px-2.5 py-1.5 text-[13px] text-ink-800 focus:border-ink-900"
+            className="rounded-xl border border-ink-200 px-2.5 py-1.5 text-[13px] text-ink-800 focus:border-ink-900"
           />
           <div className="ml-auto flex gap-1">
             {[
@@ -178,7 +178,7 @@ export function PeriodPicker({ period, onChange, label, modes, className = '' }:
                   }
                   onChange({ ...period, start: iso(start), end: iso(end) })
                 }}
-                className="rounded-full bg-ink-50 px-2.5 py-1 text-[11px] text-ink-500 transition hover:bg-ink-100 hover:text-ink-800"
+                className="rounded-full bg-ink-50 px-2.5 py-1 text-[12px] text-ink-500 transition hover:bg-ink-100 hover:text-ink-800"
               >
                 {preset.label}
               </button>

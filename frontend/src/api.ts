@@ -256,7 +256,14 @@ export const api = {
       description: string
     }>('/api/meta'),
 
-  messages: () => request<{ messages: ChatMessage[] }>('/api/messages'),
+  messages: (params: { beforeId?: number; q?: string; limit?: number } = {}) => {
+    const q = new URLSearchParams()
+    if (params.beforeId) q.set('before_id', String(params.beforeId))
+    if (params.q) q.set('q', params.q)
+    if (params.limit) q.set('limit', String(params.limit))
+    const suffix = q.toString() ? `?${q.toString()}` : ''
+    return request<{ messages: ChatMessage[]; has_more?: boolean }>(`/api/messages${suffix}`)
+  },
   clearMessages: () => request<{ ok: boolean }>('/api/messages', { method: 'DELETE' }),
   chat: (text: string, imageIds: string[] = [], confirmDuplicate = false) =>
     request<{ reply: string; payload: MessagePayload; voice_enabled?: boolean }>('/api/chat', {

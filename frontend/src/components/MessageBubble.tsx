@@ -3,6 +3,7 @@ import { BASE, type ChatMessage, type Stats, type Transaction } from '../api'
 import { TransactionCard } from './TransactionCard'
 import { Chart, TOOLTIP_STYLE } from './Chart'
 import { fmtDateLabel, fmtMoney, groupByDate } from '../utils'
+import { Amount } from './Amount'
 import { IconChevron } from '../icons'
 import { BudgetProgress } from './BudgetProgress'
 import assistantAvatar from '../assets/assistant-avatar.webp'
@@ -79,7 +80,7 @@ export function MessageBubble({ message, categories, payments, onUpdate, onDelet
               <div className="flex items-center justify-end gap-1 pt-0.5 text-[12px] text-ink-500">
                 流水金额合计
                 <span className="font-num font-semibold text-ink-900">
-                  ¥{fmtMoney(payload.transactions.reduce((sum, t) => sum + t.amount, 0))}
+                  <Amount value={payload.transactions.reduce((sum, t) => sum + t.amount, 0)} size={12} />
                 </span>
               </div>
             )}
@@ -97,9 +98,9 @@ export function MessageBubble({ message, categories, payments, onUpdate, onDelet
                 className="flex items-center gap-2 rounded-xl border border-dashed border-ink-200 bg-ink-50/40 px-3 py-2 text-[12px] text-ink-500"
               >
                 <span className="line-through">
-                  {tx.merchant || tx.note || tx.category} ¥{fmtMoney(tx.amount)}
+                  {tx.merchant || tx.note || tx.category} <Amount value={tx.amount} size={12} />
                 </span>
-                <span className="ml-auto rounded bg-white px-1.5 py-0.5 text-[11px] text-ink-500">已删除</span>
+                <span className="ml-auto rounded bg-white px-1.5 py-0.5 text-[12px] text-ink-500">已删除</span>
               </div>
             ))}
           </div>
@@ -113,7 +114,7 @@ export function MessageBubble({ message, categories, payments, onUpdate, onDelet
           </div>
         )}
         {payload.kind === 'duplicate' && payload.retry && <button disabled={disabled} onClick={() => onSend(payload.retry!.text, payload.retry!.imageIds, true)} className="rounded-full border border-ink-200 px-3 py-1.5 text-[12px] text-ink-700 disabled:opacity-40">这是另一笔，仍然记入</button>}
-        {payload.choices && <div className="flex flex-wrap gap-2">{payload.choices.map(choice => <button key={choice.text} disabled={disabled} onClick={() => onSend(choice.text)} className="rounded-lg border border-ink-200 px-2 py-1 text-[12px] disabled:opacity-40">{choice.label}</button>)}</div>}
+        {payload.choices && <div className="flex flex-wrap gap-2">{payload.choices.map(choice => <button key={choice.text} disabled={disabled} onClick={() => onSend(choice.text)} className="rounded-xl border border-ink-200 px-2 py-1 text-[12px] disabled:opacity-40">{choice.label}</button>)}</div>}
         {payload.kind === 'memo' && (payload.memos?.length ? payload.memos : payload.memo ? [payload.memo] : []).map(memo => (
           <div key={memo.id} className="rounded-xl bg-indigo-50/60 p-3 text-[12px] text-ink-600 ring-1 ring-indigo-100">
             <div className="font-medium text-ink-800">⏰ {memo.content}</div>
@@ -126,7 +127,7 @@ export function MessageBubble({ message, categories, payments, onUpdate, onDelet
         {payload.budgets && <div className="space-y-2">{payload.budgets.map(b => <BudgetProgress key={b.id} budget={b} />)}{payload.budgets.length === 0 && <div className="text-[12px] text-ink-500">还没有预算，可以说“这个月餐饮预算1500”。</div>}</div>}
         {payload.preference && <div className="rounded-xl bg-ink-50 p-3 text-[12px] text-ink-600">默认付款：{payload.preference.payment_method || '不设置'}{Object.entries(payload.preference.rules).map(([merchant, category]) => <div key={merchant} className="mt-1">{merchant} → {category}</div>)}<div className="mt-1 text-ink-500">可以到“管理”查看和取消规则。</div></div>}
         {payload.download && <a href={`${BASE}${payload.download}`} download className="inline-block rounded-full bg-ink-900 px-3 py-1.5 text-[12px] text-white">下载账单 CSV</a>}
-        {payload.comparison && <div className="rounded-xl bg-ink-50 p-3 text-[12px] text-ink-600"><div>对比前一等长周期：{payload.comparison.start} 至 {payload.comparison.end}，¥{fmtMoney(payload.comparison.total)}</div>{payload.comparison.categories.slice(0, 5).map(g => <div key={g.label} className="mt-1 flex justify-between"><span>{g.label}</span><span className={g.value > 0 ? 'text-red-500' : 'text-emerald-600'}>{g.value > 0 ? '+' : '−'}¥{fmtMoney(Math.abs(g.value))}</span></div>)}</div>}
+        {payload.comparison && <div className="rounded-xl bg-ink-50 p-3 text-[12px] text-ink-600"><div>对比前一等长周期：{payload.comparison.start} 至 {payload.comparison.end}，<Amount value={payload.comparison.total} size={12} /></div>{payload.comparison.categories.slice(0, 5).map(g => <div key={g.label} className="mt-1 flex justify-between"><span>{g.label}</span><span className={g.value > 0 ? 'text-red-500' : 'text-emerald-600'}>{g.value > 0 ? '+' : '−'}<Amount value={Math.abs(g.value)} size={12} /></span></div>)}</div>}
 
         {['query', 'compare', 'export'].includes(payload.kind || '') && payload.stats && payload.stats.count > 0 && (
           <QueryResult
@@ -211,7 +212,7 @@ function QueryResult({ stats, transactions, range, truncated, relaxed, sortBy, r
         <span className="shrink-0 text-[12px] text-ink-500">
           <b className="font-num text-ink-800">{stats.count}</b> 笔
           <span className="mx-1 text-ink-200">·</span>
-          合计 <b className="font-num text-ink-900">¥{fmtMoney(total)}</b>
+          合计 <Amount value={total} size={13} className="text-ink-900" />
         </span>
       </div>
 
@@ -228,7 +229,7 @@ function QueryResult({ stats, transactions, range, truncated, relaxed, sortBy, r
               />
               <span className="w-10 shrink-0 text-ink-500">{item.label}</span>
               <span className="min-w-0 flex-1 border-b border-dashed border-ink-100" />
-              <span className="font-num tabular-nums text-ink-800">¥{fmtMoney(item.value)}</span>
+              <Amount value={item.value} size={12} className="text-ink-800" />
               <span className="w-9 text-right tabular-nums text-ink-400">
                 {Math.round((item.value / (total || 1)) * 100)}%
               </span>
@@ -242,14 +243,14 @@ function QueryResult({ stats, transactions, range, truncated, relaxed, sortBy, r
           {stats.by_payment
             .filter((p) => p.label !== '未记录')
             .map((item) => (
-              <span key={item.label} className="flex items-center gap-1 rounded-full bg-ink-50 px-2 py-0.5 text-[11px] text-ink-500">
+              <span key={item.label} className="flex items-center gap-1 rounded-full bg-ink-50 px-2 py-0.5 text-[12px] text-ink-500">
                 {item.label}
-                <span className="font-num font-medium text-ink-800">¥{fmtMoney(item.value)}</span>
+                <Amount value={item.value} size={12} className="text-ink-800" />
               </span>
             ))}
         </div>
       )}
-      <div className="flex items-center justify-between gap-3 border-t border-ink-50 px-3.5 py-2 text-[11px] text-ink-500">
+      <div className="flex items-center justify-between gap-3 border-t border-ink-50 px-3.5 py-2 text-[12px] text-ink-500">
         {/* 单日查询的日期已经写在标题了，这里只在跨天时补上区间 */}
         {stats.first_date && stats.last_date && stats.first_date !== stats.last_date ? (
           <span>
@@ -259,14 +260,14 @@ function QueryResult({ stats, transactions, range, truncated, relaxed, sortBy, r
           <span>共 {stats.count} 笔</span>
         )}
         <span>
-          笔均 <b className="font-num font-medium text-ink-700">¥{fmtMoney(stats.average)}</b>
+          笔均 <Amount value={stats.average} size={12} className="text-ink-700" />
           <span className="mx-1.5 text-ink-200">|</span>
-          最高 <b className="font-num font-medium text-ink-700">¥{fmtMoney(stats.max)}</b>
+          最高 <Amount value={stats.max} size={12} className="text-ink-700" />
         </span>
       </div>
 
       {relaxed && (
-        <div className="border-t border-amber-100 bg-amber-50/60 px-3.5 py-1.5 text-[11px] text-amber-700">
+        <div className="border-t border-amber-100 bg-amber-50/60 px-3.5 py-1.5 text-[12px] text-amber-700">
           这段时间没有记录，下面是全部时间里匹配到的结果
         </div>
       )}
@@ -298,14 +299,14 @@ function QueryResult({ stats, transactions, range, truncated, relaxed, sortBy, r
                   <div key={group.date} className="space-y-1.5">
                     <div className="flex items-baseline justify-between px-0.5">
                       <span className="text-[12px] font-medium text-ink-500">{fmtDateLabel(group.date)}</span>
-                      <span className="font-num text-[11px] tabular-nums text-ink-500">¥{fmtMoney(group.total)}</span>
+                      <Amount value={group.total} size={11} className="text-ink-500" />
                     </div>
                     {renderCards(group.items)}
                   </div>
                 ))
               )}
               {truncated > 0 && (
-                <div className="text-center text-[11px] text-ink-500">
+                <div className="text-center text-[12px] text-ink-500">
                   还有 {truncated} 笔没列出，去账单页看全部
                 </div>
               )}

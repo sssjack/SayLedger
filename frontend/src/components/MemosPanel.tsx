@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { api, type Memo } from '../api'
 
 type Props = { refreshKey: number; onChanged: () => void }
-const input = 'min-w-0 rounded-lg border border-ink-200 bg-white px-2.5 py-2 text-[12px] text-ink-800 outline-none focus:border-ink-700'
+const input = 'min-w-0 rounded-xl border border-ink-200 bg-white px-2.5 py-2 text-[12px] text-ink-800 outline-none focus:border-ink-700'
 
 const PUSH_LABELS: Record<string, string> = {
   wechat_queued: '已排队发微信',
@@ -65,10 +65,10 @@ export function MemosPanel({ refreshKey, onChanged }: Props) {
           <span className="text-[13px] font-medium text-ink-900">{memo.content}</span>
           {!!memo.stageDay && <span className="prose-note">计划第{memo.stageDay}天</span>}
           {memo.recurrenceLabel && (
-            <span className="rounded-full bg-indigo-50 px-1.5 py-0.5 text-[11px] text-indigo-600">{memo.recurrenceLabel}</span>
+            <span className="rounded-full bg-indigo-50 px-1.5 py-0.5 text-[12px] text-indigo-600">{memo.recurrenceLabel}</span>
           )}
-          {memo.status === 'done' && <span className="rounded-full bg-emerald-50 px-1.5 py-0.5 text-[11px] text-emerald-600">已提醒</span>}
-          {memo.status === 'cancelled' && <span className="rounded-full bg-ink-100 px-1.5 py-0.5 text-[11px] text-ink-500">已取消</span>}
+          {memo.status === 'done' && <span className="rounded-full bg-emerald-50 px-1.5 py-0.5 text-[12px] text-emerald-600">已提醒</span>}
+          {memo.status === 'cancelled' && <span className="rounded-full bg-ink-100 px-1.5 py-0.5 text-[12px] text-ink-500">已取消</span>}
         </div>
         <div className="mt-0.5 text-[12px] text-ink-500">
           {memo.status === 'active' ? `下一次提醒：${memo.nextTriggerAt}` : `提醒时间：${memo.nextTriggerAt}`}
@@ -77,12 +77,12 @@ export function MemosPanel({ refreshKey, onChanged }: Props) {
       </div>
       {memo.status === 'active' && (
         <div className="flex shrink-0 gap-1.5">
-          <button disabled={busy} onClick={() => void run(() => api.updateMemo(memo.id, { status: 'done' }))} className="rounded-lg bg-white px-2 py-1 text-[11px] text-emerald-600 ring-1 ring-ink-100 disabled:opacity-40">完成</button>
-          <button disabled={busy} onClick={() => void run(() => api.updateMemo(memo.id, { status: 'cancelled' }))} className="rounded-lg bg-white px-2 py-1 text-[11px] text-ink-500 ring-1 ring-ink-100 disabled:opacity-40">取消</button>
+          <button disabled={busy} onClick={() => void run(() => api.updateMemo(memo.id, { status: 'done' }))} className="rounded-xl bg-white px-2 py-1 text-[12px] text-emerald-600 ring-1 ring-ink-100 disabled:opacity-40">完成</button>
+          <button disabled={busy} onClick={() => void run(() => api.updateMemo(memo.id, { status: 'cancelled' }))} className="rounded-xl bg-white px-2 py-1 text-[12px] text-ink-500 ring-1 ring-ink-100 disabled:opacity-40">取消</button>
         </div>
       )}
       {memo.status !== 'active' && (
-        <button disabled={busy} onClick={() => void run(() => api.deleteMemo(memo.id))} className="shrink-0 rounded-lg bg-white px-2 py-1 text-[11px] text-ink-500 ring-1 ring-ink-100 disabled:opacity-40">删除</button>
+        <button disabled={busy} onClick={() => void run(() => api.deleteMemo(memo.id))} className="shrink-0 rounded-xl bg-white px-2 py-1 text-[12px] text-ink-500 ring-1 ring-ink-100 disabled:opacity-40">删除</button>
       )}
     </div>
   )
@@ -122,7 +122,7 @@ export function MemosPanel({ refreshKey, onChanged }: Props) {
               <option value="weekly">每周</option>
               <option value="interval">每隔几天</option>
             </select>
-            <button disabled={busy} className="rounded-lg bg-accent-600 px-3 py-2 text-[12px] text-white disabled:opacity-40">添加</button>
+            <button disabled={busy} className="rounded-xl bg-accent-600 px-3 py-2 text-[12px] text-white disabled:opacity-40">添加</button>
           </div>
           {recurrence === 'interval' && <label className="col-span-2 flex items-center gap-2 text-[12px] text-ink-600">
             每 <input aria-label="循环间隔天数" type="number" min={1} max={365} required value={intervalDays}

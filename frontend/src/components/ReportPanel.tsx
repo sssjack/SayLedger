@@ -155,17 +155,17 @@ export function ReportPanel({ period, refreshKey }: Props) {
             <div className="px-4 pt-4">
               <div className="flex items-baseline justify-between">
                 <span className="text-[12px] text-ink-500">个人净支出</span>
-                <span className="text-[11px] text-ink-500">{report.label}</span>
+                <span className="text-[12px] text-ink-500">{report.label}</span>
               </div>
               <div className="mt-1.5 flex items-end justify-between">
                 <Amount value={report.stats.total} size={32} />
-                <div className="mb-0.5 text-right text-[11px] leading-relaxed text-ink-500">
+                <div className="mb-0.5 text-right text-[12px] leading-relaxed text-ink-500">
                   <div>{report.stats.count} 笔</div>
-                  <div>均 ¥{fmtMoney(report.stats.average)}</div>
+                  <div className="flex items-baseline justify-end gap-0.5">均<Amount value={report.stats.average} size={11} className="text-ink-500" /></div>
                 </div>
               </div>
               {report.previous_total > 0 && (
-                <div className="mt-1 text-[11px] text-ink-500">
+                <div className="mt-1 text-[12px] text-ink-500">
                   较上期
                   <span className={report.change_pct > 0 ? 'text-red-500' : 'text-emerald-600'}>
                     {report.change_pct > 0 ? ' +' : ' −'}
@@ -179,8 +179,8 @@ export function ReportPanel({ period, refreshKey }: Props) {
           </div>
 
           <div className="grid grid-cols-2 gap-3">
-            <div className="card p-4"><div className="text-[11px] text-ink-500">真实收入</div><div className="mt-1 text-emerald-600"><Amount value={report.stats.income ?? 0} size={20} /></div></div>
-            <div className="card p-4"><div className="text-[11px] text-ink-500">收支结余</div><div className="mt-1 text-ink-900"><Amount value={report.stats.balance ?? 0} size={20} /></div></div>
+            <div className="card p-4"><div className="text-[12px] text-ink-500">真实收入</div><div className="mt-1 text-emerald-600"><Amount value={report.stats.income ?? 0} size={20} /></div></div>
+            <div className="card p-4"><div className="text-[12px] text-ink-500">收支结余</div><div className="mt-1 text-ink-900"><Amount value={report.stats.balance ?? 0} size={20} /></div></div>
           </div>
           <StatsNote
             items={[
@@ -197,7 +197,7 @@ export function ReportPanel({ period, refreshKey }: Props) {
                 <div className="relative w-[116px] shrink-0">
                   <Chart option={donutOption} height={116} />
                   <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-                    <span className="text-[11px] text-ink-500">分类</span>
+                    <span className="text-[12px] text-ink-500">分类</span>
                     <span className="font-num text-[17px] font-semibold leading-tight">
                       {report.stats.by_category.filter((c) => c.value > 0).length}
                     </span>
@@ -213,7 +213,7 @@ export function ReportPanel({ period, refreshKey }: Props) {
                             <CategoryIcon name={ICON_MAP[item.label] ?? 'dots'} size={12} style={{ color: mute(colorFor(item.label), 0.18) }} />
                             {item.label}
                           </span>
-                          <span className="font-num tabular-nums text-ink-800">¥{fmtMoney(item.value)}</span>
+                          <Amount value={item.value} size={12} className="text-ink-800" />
                         </div>
                         <div className="mt-1 h-1 overflow-hidden rounded-full bg-ink-100">
                           <div
@@ -235,7 +235,7 @@ export function ReportPanel({ period, refreshKey }: Props) {
                         <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: colorFor(item.label) }} />
                         {item.label}
                       </span>
-                      <span className="font-num tabular-nums text-ink-700">¥{fmtMoney(item.value)}</span>
+                      <Amount value={item.value} size={12} className="text-ink-700" />
                     </div>
                   ))}
                 </div>
@@ -243,7 +243,7 @@ export function ReportPanel({ period, refreshKey }: Props) {
 
               {report.stats.by_payment.filter((p) => p.label !== '未记录').length > 0 && (
                 <div className="mt-3 border-t border-ink-50 pt-3">
-                  <div className="mb-2 text-[11px] text-ink-500">付款方式</div>
+                  <div className="mb-2 text-[12px] text-ink-500">付款方式</div>
                   <div className="flex flex-wrap gap-1.5">
                     {report.stats.by_payment
                       .filter((p) => p.label !== '未记录')
@@ -254,7 +254,7 @@ export function ReportPanel({ period, refreshKey }: Props) {
                         >
                           <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: paymentColor(item.label) }} />
                           <span className="text-ink-600">{item.label}</span>
-                          <span className="font-num font-medium tabular-nums text-ink-900">¥{fmtMoney(item.value)}</span>
+                          <Amount value={item.value} size={12} className="text-ink-900" />
                         </span>
                       ))}
                   </div>
@@ -274,7 +274,7 @@ export function ReportPanel({ period, refreshKey }: Props) {
                   >
                     <span className="text-[12px] text-ink-700">{event.label}</span>
                     <span className="rounded-full bg-white px-2 py-0.5 font-num text-[12px] font-medium tabular-nums text-ink-900">
-                      ¥{fmtMoney(event.value)}
+                      <Amount value={event.value} size={12} />
                     </span>
                   </div>
                 ))}
@@ -293,7 +293,7 @@ export function ReportPanel({ period, refreshKey }: Props) {
                   {!insightLoading && (
                     <button
                       onClick={() => void fetchInsight()}
-                      className="rounded-full bg-accent-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-accent-700"
+                      className="rounded-full bg-accent-600 px-2.5 py-1 text-[12px] font-medium text-white hover:bg-accent-700"
                     >
                       {insight ? '重新生成' : '生成'}
                     </button>
@@ -323,7 +323,7 @@ export function ReportPanel({ period, refreshKey }: Props) {
                       ))}
                     </ul>
                     {insight.tip && (
-                      <div className="rounded-lg bg-indigo-50/70 px-2.5 py-2 text-[12px] leading-relaxed text-indigo-900">
+                      <div className="rounded-xl bg-indigo-50/70 px-2.5 py-2 text-[12px] leading-relaxed text-indigo-900">
                         {insight.tip}
                       </div>
                     )}
@@ -339,18 +339,18 @@ export function ReportPanel({ period, refreshKey }: Props) {
               <div className="space-y-2">
                 {report.top_transactions.map((tx, index) => (
                   <div key={tx.id} className="flex items-center gap-2.5">
-                    <span className="w-3 shrink-0 font-num text-[11px] text-ink-400">{index + 1}</span>
+                    <span className="w-3 shrink-0 font-num text-[12px] text-ink-400">{index + 1}</span>
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-[13px] text-ink-800">
                         {tx.merchant || tx.note || tx.category}
                       </span>
-                      <span className="text-[11px] text-ink-500">
+                      <span className="text-[12px] text-ink-500">
                         {tx.category} · {tx.date.slice(5).replace('-', '/')}
                         {tx.paymentMethod && ` · ${tx.paymentMethod}`}
                       </span>
                     </span>
                     <span className="font-num text-[13px] font-medium tabular-nums text-ink-900">
-                      ¥{fmtMoney(tx.expenseAmount)}
+                      <Amount value={tx.expenseAmount} size={12} />
                     </span>
                   </div>
                 ))}

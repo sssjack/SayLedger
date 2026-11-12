@@ -4,14 +4,15 @@ import { IconChevron, IconInfo } from '../icons'
 type Props = {
   items: string[]
   label?: string
+  defaultOpen?: boolean
 }
 
 /**
  * 统计口径说明。
  * 原先是两段 11px 的常驻文字，既难读又占位；现在默认收起，需要核对数字时再展开。
  */
-export function StatsNote({ items, label = '统计口径' }: Props) {
-  const [open, setOpen] = useState(false)
+export function StatsNote({ items, label = '统计口径', defaultOpen = false }: Props) {
+  const [open, setOpen] = useState(defaultOpen)
   if (items.length === 0) return null
 
   return (
@@ -19,7 +20,7 @@ export function StatsNote({ items, label = '统计口径' }: Props) {
       <button
         onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
-        className="flex items-center gap-1 rounded-lg py-0.5 text-[11px] text-ink-500 transition hover:text-ink-700"
+        className="flex items-center gap-1 rounded-xl py-0.5 text-[12px] text-ink-500 transition hover:text-ink-700"
       >
         <IconInfo width={13} height={13} />
         {label}

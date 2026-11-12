@@ -46,7 +46,7 @@ export function FilterChip({ label, value, options, onChange }: Props) {
         onChange(optionValue)
         setOpen(false)
       }}
-      className={`flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-[12px] transition ${
+      className={`flex w-full items-center justify-between rounded-xl px-2.5 py-1.5 text-left text-[12px] transition ${
         value === optionValue ? 'bg-accent-50 text-accent-700' : 'text-ink-700 hover:bg-ink-50'
       }`}
     >

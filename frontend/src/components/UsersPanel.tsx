@@ -80,7 +80,7 @@ export function UsersPanel() {
           <li key={user.id} className="flex items-center justify-between text-[13px] text-ink-700">
             <span>
               {user.username}
-              {user.username === 'admin' && <span className="ml-1.5 text-[11px] text-ink-500">管理员</span>}
+              {user.username === 'admin' && <span className="ml-1.5 text-[12px] text-ink-500">管理员</span>}
             </span>
             <span className="text-[12px] text-ink-500">{user.created_at ? user.created_at.slice(0, 10) : ''}</span>
           </li>

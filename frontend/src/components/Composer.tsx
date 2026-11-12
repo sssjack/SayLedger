@@ -5,6 +5,8 @@ import { api, BASE } from '../api'
 type Props = {
   onSend: (text: string, imageIds: string[]) => Promise<void>
   disabled?: boolean
+  /** 空状态里的「记第一笔」要把焦点直接送到输入框 */
+  inputRef?: React.RefObject<HTMLTextAreaElement>
 }
 
 type Recognition = {
@@ -30,7 +32,7 @@ function getRecognition(): Recognition | null {
   return instance
 }
 
-export function Composer({ onSend, disabled }: Props) {
+export function Composer({ onSend, disabled, inputRef: externalRef }: Props) {
   const [text, setText] = useState('')
   const [images, setImages] = useState<{ id: string; url: string }[]>([])
   const [uploading, setUploading] = useState(false)
@@ -38,7 +40,8 @@ export function Composer({ onSend, disabled }: Props) {
   const [hint, setHint] = useState('')
   const [focused, setFocused] = useState(false)
 
-  const inputRef = useRef<HTMLTextAreaElement>(null)
+  const localRef = useRef<HTMLTextAreaElement>(null)
+  const inputRef = externalRef ?? localRef
   const fileRef = useRef<HTMLInputElement>(null)
   const recognitionRef = useRef<Recognition | null>(null)
   const baseTextRef = useRef('')
@@ -142,7 +145,7 @@ export function Composer({ onSend, disabled }: Props) {
     <div className="sticky bottom-0 z-20 bg-gradient-to-t from-ink-50 via-ink-50 to-transparent pb-3 pt-4 sm:pb-5">
       <div className="mx-auto w-full max-w-2xl px-3 sm:px-4">
         {hint && (
-          <div className="mb-2 animate-rise rounded-lg bg-ink-900/90 px-3 py-1.5 text-[12px] text-white backdrop-blur">
+          <div className="mb-2 animate-rise rounded-xl bg-ink-900/90 px-3 py-1.5 text-[12px] text-white backdrop-blur">
             {hint}
           </div>
         )}
@@ -230,7 +233,7 @@ export function Composer({ onSend, disabled }: Props) {
           </button>
         </div>
 
-        <div className="mt-1.5 hidden items-center justify-center gap-3 text-[11px] text-ink-400 sm:flex">
+        <div className="mt-1.5 hidden items-center justify-center gap-3 text-[12px] text-ink-400 sm:flex">
           <span>Enter 发送 · Shift+Enter 换行</span>
           <span className="text-ink-200">|</span>
           <span>支持语音、小票照片</span>

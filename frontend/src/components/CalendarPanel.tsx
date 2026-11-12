@@ -131,7 +131,7 @@ export function CalendarPanel({ month, onMonthChange, refreshKey }: Props) {
           )}
         </div>
 
-        <div className="mt-3 grid grid-cols-7 gap-1 text-center text-[11px] text-ink-500">
+        <div className="mt-3 grid grid-cols-7 gap-1 text-center text-[12px] text-ink-500">
           {['一', '二', '三', '四', '五', '六', '日'].map((w) => <div key={w}>{w}</div>)}
         </div>
         {loadingMonth ? (
@@ -171,7 +171,7 @@ export function CalendarPanel({ month, onMonthChange, refreshKey }: Props) {
                       </span>
                       {holiday && (
                         <span
-                          className={`mt-0.5 rounded px-1 text-[11px] leading-tight ${
+                          className={`mt-0.5 rounded px-1 text-[12px] leading-tight ${
                             holiday.kind === 'holiday'
                               ? 'bg-red-100 font-medium text-red-600'
                               : 'bg-ink-100 text-ink-500'
@@ -181,12 +181,12 @@ export function CalendarPanel({ month, onMonthChange, refreshKey }: Props) {
                         </span>
                       )}
                       {lines.spend > 0 && (
-                        <span className="mt-0.5 truncate font-num text-[11px] leading-tight text-red-500">
+                        <span className="mt-0.5 truncate font-num text-[12px] leading-tight text-red-500">
                           -{fmtMoney(lines.spend)}
                         </span>
                       )}
                       {lines.earn > 0 && (
-                        <span className="truncate font-num text-[11px] leading-tight text-emerald-600">
+                        <span className="truncate font-num text-[12px] leading-tight text-emerald-600">
                           +{fmtMoney(lines.earn)}
                         </span>
                       )}
@@ -198,7 +198,7 @@ export function CalendarPanel({ month, onMonthChange, refreshKey }: Props) {
           </div>
         )}
         {error && <div className="mt-2 text-[12px] text-red-600">{error}</div>}
-        <div className="mt-3 border-t border-ink-50 pt-2 text-center text-[11px] text-ink-500">
+        <div className="mt-3 border-t border-ink-50 pt-2 text-center text-[12px] text-ink-500">
           <span className="mr-1 rounded bg-red-100 px-1 py-px font-medium text-red-600">春节</span>
           法定节假日
           <span className="ml-3 mr-1 rounded bg-ink-100 px-1 py-px text-ink-500">班</span>
@@ -241,7 +241,7 @@ export function CalendarPanel({ month, onMonthChange, refreshKey }: Props) {
                             <div className="truncate text-[13px] text-ink-800">
                               {tx.merchant || tx.note || tx.category}
                             </div>
-                            <div className="truncate text-[11px] text-ink-500">
+                            <div className="truncate text-[12px] text-ink-500">
                               {tx.category}
                               {tx.paymentMethod ? ` · ${tx.paymentMethod}` : ''}
                               {tx.occurredAt ? ` · ${tx.occurredAt.slice(11, 16)}` : ''}
@@ -255,7 +255,7 @@ export function CalendarPanel({ month, onMonthChange, refreshKey }: Props) {
                             >
                               {signed !== 0 ? fmtMoney(signed, true) : fmtMoney(tx.personalAmount ?? tx.amount)}
                             </span>
-                            <div className="text-[11px] text-ink-500">{KIND_LABELS[tx.kind] ?? tx.kind}</div>
+                            <div className="text-[12px] text-ink-500">{KIND_LABELS[tx.kind] ?? tx.kind}</div>
                           </div>
                         </li>
                       )
@@ -275,7 +275,7 @@ export function CalendarPanel({ month, onMonthChange, refreshKey }: Props) {
                         <li key={memo.id} className="flex items-baseline justify-between gap-3 py-1.5">
                           <div className="min-w-0">
                             <div className="truncate text-[13px] text-ink-800">{memo.content}</div>
-                            <div className="truncate text-[11px] text-ink-500">
+                            <div className="truncate text-[12px] text-ink-500">
                               {memoTime(memo, selected)} · {memo.recurrenceLabel}
                             </div>
                           </div>
