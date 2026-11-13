@@ -30,7 +30,7 @@ function initialView(query: URLSearchParams): View {
 
 function initialPeriod(query: URLSearchParams): Period {
   const raw = query.get('period')
-  const mode: PeriodMode = raw === 'day' || raw === 'year' || raw === 'custom' ? raw : 'month'
+  const mode: PeriodMode = raw === 'day' || raw === 'week' || raw === 'year' || raw === 'custom' ? raw : 'month'
   const base = makePeriod(mode)
   const anchor = query.get('anchor')
   const start = query.get('start')

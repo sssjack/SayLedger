@@ -14,7 +14,9 @@ function weekKey(): string {
 
 /**
  * 每周首次打开时，在对话顶部给一条回顾。
- * 没有定时任务，也不新增接口：读的是已有的 /api/stats?period=week，
+ * 没有定时任务，也不新增接口：读的是 /api/stats?period=week，
+ * 周口径是自然周（周一到周日，本周只到今天）；环比对比上一个等长周期，
+ * 也就是上周同一段（周一到今天这个星期几），所以文案说「同期」。
  * 一周只出现一次，关掉就不再打扰。
  */
 export function WeeklyDigest({ onOpenReport, onShown }: { onOpenReport: () => void; onShown?: () => void }) {
@@ -51,12 +53,13 @@ export function WeeklyDigest({ onOpenReport, onShown }: { onOpenReport: () => vo
 
   const change = stats.change_pct ?? 0
   const previousTotal = stats.previous?.total ?? 0
+  // 本周通常还没过完，接口比的是「上一个等长周期」，所以说同期而不是整周
   const changeText =
     previousTotal === 0
-      ? '上周还没有记录'
+      ? '上周同期还没有记录'
       : change === 0
-        ? '和上周基本持平'
-        : `比上周${change > 0 ? '多花' : '少花'} ${Math.abs(change)}%`
+        ? '和上周同期基本持平'
+        : `比上周同期${change > 0 ? '多花' : '少花'} ${Math.abs(change)}%`
 
   return (
     <section className="animate-rise rounded-2xl border border-accent-100 bg-accent-50/50 p-4">

@@ -1,12 +1,13 @@
 import { IconChevron } from '../icons'
 
-export type PeriodMode = 'day' | 'month' | 'year' | 'custom'
+export type PeriodMode = 'day' | 'week' | 'month' | 'year' | 'custom'
 
 /** 一个周期 = 模式 + 锚点 + 自定义区间。账单/日历/分析三个视图共用同一份，避免各算各的。 */
 export type Period = { mode: PeriodMode; anchor: string; start: string; end: string }
 
 const MODE_LABELS: { key: PeriodMode; label: string }[] = [
   { key: 'day', label: '日' },
+  { key: 'week', label: '周' },
   { key: 'month', label: '月' },
   { key: 'year', label: '年' },
   { key: 'custom', label: '区间' },
@@ -20,12 +21,31 @@ export function todayISO(): string {
   return new Date(now.getTime() - offset).toISOString().slice(0, 10)
 }
 
+function isoOf(date: Date): string {
+  const offset = date.getTimezoneOffset() * 60000
+  return new Date(date.getTime() - offset).toISOString().slice(0, 10)
+}
+
+/** 所在周的周一。周一到周日的口径和周报一致，不跟着浏览器区域设置走。 */
+export function mondayOf(iso: string): string {
+  const [year, month, day] = iso.split('-').map(Number)
+  const date = new Date(year, month - 1, day)
+  date.setDate(date.getDate() - ((date.getDay() + 6) % 7))
+  return isoOf(date)
+}
+
+function shiftDays(iso: string, days: number): string {
+  const [year, month, day] = iso.split('-').map(Number)
+  return isoOf(new Date(year, month - 1, day + days))
+}
+
 function lastDayOfMonth(anchor: string): string {
   const [year, month] = anchor.split('-').map(Number)
   return `${anchor.slice(0, 7)}-${pad(new Date(year, month, 0).getDate())}`
 }
 
 export function defaultAnchor(mode: PeriodMode, base = todayISO()): string {
+  if (mode === 'week') return mondayOf(base)
   if (mode === 'month') return `${base.slice(0, 7)}-01`
   if (mode === 'year') return `${base.slice(0, 4)}-01-01`
   return base
@@ -43,11 +63,9 @@ export function changeMode(period: Period, mode: PeriodMode): Period {
 }
 
 export function shiftPeriod(period: Period, delta: number): Period {
-  const [year, month, day = 1] = period.anchor.split('-').map(Number)
-  if (period.mode === 'day') {
-    const date = new Date(year, month - 1, day + delta)
-    return { ...period, anchor: `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}` }
-  }
+  if (period.mode === 'week') return { ...period, anchor: shiftDays(period.anchor, delta * 7) }
+  const [year, month] = period.anchor.split('-').map(Number)
+  if (period.mode === 'day') return { ...period, anchor: shiftDays(period.anchor, delta) }
   if (period.mode === 'year') return { ...period, anchor: `${year + delta}-01-01` }
   if (period.mode === 'month') {
     const date = new Date(year, month - 1 + delta, 1)
@@ -58,6 +76,10 @@ export function shiftPeriod(period: Period, delta: number): Period {
 
 export function rangeOf(period: Period): { start: string; end: string } {
   if (period.mode === 'day') return { start: period.anchor, end: period.anchor }
+  if (period.mode === 'week') {
+    const start = mondayOf(period.anchor)
+    return { start, end: shiftDays(start, 6) }
+  }
   if (period.mode === 'month') return { start: `${period.anchor.slice(0, 7)}-01`, end: lastDayOfMonth(period.anchor) }
   if (period.mode === 'year') return { start: `${period.anchor.slice(0, 4)}-01-01`, end: `${period.anchor.slice(0, 4)}-12-31` }
   return { start: period.start, end: period.end }
@@ -78,6 +100,19 @@ export function periodLabel(period: Period): string {
   if (period.mode === 'day') return `${year}年${month}月${day}日`
   if (period.mode === 'year') return `${year}年`
   if (period.mode === 'month') return `${year}年${month}月`
+  if (period.mode === 'week') {
+    // 最近两周直接说「本周/上周」，比一串日期好读；再往前才需要落到具体日期
+    const start = mondayOf(period.anchor)
+    const thisMonday = mondayOf(todayISO())
+    if (start === thisMonday) return '本周'
+    if (start === shiftDays(thisMonday, -7)) return '上周'
+    const end = shiftDays(start, 6)
+    const [sy, sm, sd] = start.split('-').map(Number)
+    const [ey, em, ed] = end.split('-').map(Number)
+    if (sy !== ey) return `${sy}年${sm}月${sd}日 - ${ey}年${em}月${ed}日`
+    if (sm === em) return `${sm}月${sd}日 - ${ed}日`
+    return `${sm}月${sd}日 - ${em}月${ed}日`
+  }
   return `${period.start.slice(5).replace('-', '/')} 至 ${period.end.slice(5).replace('-', '/')}`
 }
 
@@ -97,7 +132,7 @@ export function PeriodPicker({ period, onChange, label, modes, className = '' }:
 
   return (
     <div className={`space-y-2 ${className}`}>
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
         {!single && (
           <div className="inline-flex shrink-0 rounded-full bg-ink-100 p-0.5" role="tablist" aria-label="统计周期">
             {tabs.map((item) => (
@@ -106,7 +141,7 @@ export function PeriodPicker({ period, onChange, label, modes, className = '' }:
                 role="tab"
                 aria-selected={period.mode === item.key}
                 onClick={() => onChange(changeMode(period, item.key))}
-                className={`rounded-full px-3 py-1 text-[12px] font-medium transition ${
+                className={`rounded-full px-2.5 py-1 text-[12px] font-medium transition sm:px-3 ${
                   period.mode === item.key ? 'bg-white text-accent-700 shadow-sm' : 'text-ink-500 hover:text-ink-700'
                 }`}
               >

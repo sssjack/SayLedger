@@ -81,7 +81,7 @@ export default function App() {
       const [meta, history, stats, voice, pending] = await Promise.all([
         api.meta(),
         api.messages(),
-        api.stats('week'),
+        api.stats('last7'),
         api.voice().catch(() => ({ enabled: false, voice: 'xiaoyi' })),
         // 只要个数，用来在导航上给「待结清」一个提醒点
         api.transactions({ pending: true, limit: 1 }).catch(() => ({ total: 0 })),
@@ -112,7 +112,7 @@ export default function App() {
   const refreshNumbers = useCallback(async () => {
     setRefreshKey((key) => key + 1)
     try {
-      const stats = await api.stats('week')
+      const stats = await api.stats('last7')
       setTodayTotal(stats.today_total)
       setWeekTotal(stats.current.total)
     } catch {

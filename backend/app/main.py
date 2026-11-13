@@ -1061,7 +1061,13 @@ def _daily_series(db: Session, user_id: int, start: dt.date, end: dt.date) -> li
 
 
 def resolve_period(period: str, anchor: str | None, start: str | None, end: str | None) -> tuple[dt.date, dt.date, str]:
-    """支持 日 / 月 / 年 / 自定义区间。返回 (start, end, label)。"""
+    """支持 日 / 周 / 月 / 年 / 自定义区间 / 近 7 天。返回 (start, end, label)。
+
+    周口径与 weekly.py 对齐：周一到周日；本周只统计到今天，label 仍是整周
+    （和 month 一样，标签是这一段的名字，不是实际收窄后的边界）。
+    历史包袱：week 早先表示「近 7 天」且忽略 anchor，首页那两处调用已改成
+    last7，两者不要再用混。
+    """
     today = now_local().date()
     if period == "custom" and (start or end):
         try:
@@ -1083,6 +1089,13 @@ def resolve_period(period: str, anchor: str | None, start: str | None, end: str 
     if period == "year":
         return dt.date(base.year, 1, 1), dt.date(base.year, 12, 31), f"{base.year}年"
     if period == "week":
+        monday = base - dt.timedelta(days=base.weekday())
+        sunday = monday + dt.timedelta(days=6)
+        label = f"{monday.month}月{monday.day}日 - {sunday.month}月{sunday.day}日"
+        if monday <= today <= sunday:
+            return monday, today, label
+        return monday, sunday, label
+    if period == "last7":
         return today - dt.timedelta(days=6), today, "近 7 天"
     first, last = month_range(base)
     return first, min(last, today) if first <= today <= last else last, f"{base.year}年{base.month}月"

@@ -15,6 +15,9 @@ type Props = {
   refreshKey: number
 }
 
+/** 周视图的横轴用星期几，一眼能看出哪天花得多；日期数字在这里没有意义。 */
+const WEEK_LABELS = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
+
 export function ReportPanel({ period, refreshKey }: Props) {
   const [report, setReport] = useState<Report | null>(null)
   const [insight, setInsight] = useState<Insight | null>(null)
@@ -61,18 +64,27 @@ export function ReportPanel({ period, refreshKey }: Props) {
     if (!report) return {}
     const useDaily = report.daily.length > 0
     const labels = useDaily
-      ? report.daily.map((d) => (period.mode === 'day' ? d.date : d.date.slice(8)))
+      ? report.daily.map((d, index) =>
+          period.mode === 'day'
+            ? d.date
+            : period.mode === 'week'
+              ? (WEEK_LABELS[index] ?? d.date.slice(8))
+              : d.date.slice(8),
+        )
       : report.monthly.map((m) => `${Number(m.label.slice(5))}月`)
     const values = useDaily ? report.daily.map((d) => d.value) : report.monthly.map((m) => m.value)
 
     return {
-      grid: { left: 8, right: 8, top: 24, bottom: 4, containLabel: true },
+      // right 留宽一点：周视图只有 4~7 个点，最后一个「周四」的标签居中会顶出卡片
+      grid: { left: 8, right: 18, top: 24, bottom: 4, containLabel: true },
       tooltip: {
         ...TOOLTIP_STYLE,
         trigger: 'axis',
         axisPointer: { type: 'line', lineStyle: { color: '#d5d9e2', type: 'dashed' } },
         formatter: (params: { axisValue: string; value: number }[]) =>
-          `${useDaily && period.mode !== 'day' ? `${params[0].axisValue}日` : params[0].axisValue}&nbsp;&nbsp;<b>¥${fmtMoney(Number(params[0].value))}</b>`,
+          `${
+            useDaily && period.mode !== 'day' && period.mode !== 'week' ? `${params[0].axisValue}日` : params[0].axisValue
+          }&nbsp;&nbsp;<b>¥${fmtMoney(Number(params[0].value))}</b>`,
       },
       xAxis: {
         type: 'category',
@@ -308,7 +320,15 @@ export function ReportPanel({ period, refreshKey }: Props) {
                 )}
                 {!insightLoading && !insight && (
                   <div className="mt-1 text-[12px] leading-relaxed text-ink-500">
-                    让 AI 读一遍这{period.mode === 'year' ? '一年' : period.mode === 'day' ? '一天' : '段时间'}的账，给几句具体建议。
+                    让 AI 读一遍这
+                    {period.mode === 'year'
+                      ? '一年'
+                      : period.mode === 'day'
+                        ? '一天'
+                        : period.mode === 'week'
+                          ? '一周'
+                          : '段时间'}
+                    的账，给几句具体建议。
                   </div>
                 )}
                 {insight && (
