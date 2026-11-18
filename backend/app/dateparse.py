@@ -19,6 +19,10 @@ _OTHER_DAY_WORDS = (
     "昨天", "昨晚", "前天", "大前天", "明天", "后天", "大后天",
     "上周", "下周", "本周", "上星期", "下星期", "本星期",
     "上月", "下月", "本月", "上个月", "下个月", "这个月",
+    # 裸写的星期几也是“别的日期”：否则“周一……今天……”这种多日句
+    # 会被 mentions_today_only 误判成只提今天，全强制回当天。
+    "周一", "周二", "周三", "周四", "周五", "周六", "周日", "周天",
+    "星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日", "星期天",
 )
 _EXPLICIT_DATE_RE = re.compile(
     r"\d{4}[-/年]\d{1,2}[-/月]\d{1,2}|(?<!\d)\d{1,2}月\d{1,2}[日号]"
@@ -66,6 +70,28 @@ def _weekday_index(word: str | None) -> int | None:
     table = {"一": 0, "二": 1, "三": 2, "四": 3, "五": 4, "六": 5, "日": 6, "天": 6,
              "1": 0, "2": 1, "3": 2, "4": 3, "5": 4, "6": 5, "7": 6}
     return table.get(word)
+
+
+# 裸写的星期几：“周一”“星期二”前面没有上/下/这/本/每。
+_BARE_WEEKDAY_RE = re.compile(r"(?<![上下这本每])(?:星期|周)([一二三四五六日天1-7])")
+
+
+def _bare_weekday(text: str, today: dt.date) -> dt.date | None:
+    """裸写的星期几指最近一次的那个星期几（今天就是则为今天）。
+
+    回归 2026-11-18：用户说“周一晚上吃的饺子15元”“周二中午午饭10.9元”，
+    模型按要求把时间词原样回填，但服务端只认带前缀的星期（上周一/这周一），
+    裸“周一/周二”一路落空，默认记了当天 12:00。
+    前面的上/这/本分支先处理带锚点的；下周/每周不在此列——“下周一”是
+    未来，不能解析成过去的周一；“每周一”是循环，由备忘解析另行处理。
+    """
+    match = _BARE_WEEKDAY_RE.search(text or "")
+    if not match:
+        return None
+    target = _weekday_index(match.group(1))
+    if target is None:
+        return None
+    return today - ((today.weekday() - target) % 7) * DAY
 
 
 def resolve_relative(text: str, today: dt.date) -> dt.date | None:
@@ -131,6 +157,10 @@ def resolve_relative(text: str, today: dt.date) -> dt.date | None:
         if target is not None:
             return today - ((today.weekday() - target) % 7) * DAY
 
+    bare = _bare_weekday(text, today)
+    if bare:
+        return bare
+
     if "上上个月" in text:
         first = today.replace(day=1)
         prev = (first - DAY).replace(day=1)
@@ -177,6 +207,12 @@ def _single_day(text: str, today: dt.date) -> dt.date | None:
         if word in text:
             return today - delta * DAY
 
+    # 裸写的星期几放“今天/昨天”这类明确相对日之后：句子同时提到今天和
+    # 星期几时（“今天是周一”），今天优先；只有星期几时才按最近的算。
+    bare = _bare_weekday(text, today)
+    if bare:
+        return bare
+
     n_days = re.search(r"([0-9一二两三四五六七八九十]+)\s*天前", text)
     if n_days:
         raw = n_days.group(1)
@@ -213,6 +249,7 @@ _DAY_MENTION_RE = re.compile(
     r"|(?<!\d)\d{1,2}月\d{1,2}[日号]"
     r"|(?:^|[，,、；;。\s和与及到至])\d{1,2}[./-]\d{1,2}(?![\d元折%.])"
     r"|(?:上|这|本)(?:个)?(?:星期|周)[一二三四五六日天1-7]"
+    r"|(?<![上下这本每])(?:星期|周)[一二三四五六日天1-7]"
     r"|大前天|前天|昨天|昨日|昨晚|今天|今日|今晚|今早|明天|明早|明晚|后天"
     r"|[0-9一二两三四五六七八九十]+\s*天前"
 )
