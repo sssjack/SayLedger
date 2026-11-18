@@ -12,7 +12,7 @@ from sqlalchemy import or_, select, update
 from app.auth import now_local
 from app.chat_service import ChatPlan, apply_chat, conversation_lock, prepare_chat
 from app.config import settings
-from app.db import SessionLocal, WechatBinding, WechatDelivery, utcnow
+from app.db import Memo, SessionLocal, WechatBinding, WechatDelivery, utcnow
 from app.finance import lock_ledger
 from app.wechat_api import WechatError, digest, seal, unseal
 from app.wechat_format import format_reply
@@ -244,6 +244,17 @@ def send_failed(delivery_id: int, error: str):
             row.retry_at = utcnow() + dt.timedelta(seconds=min(300, 2 ** row.attempts))
             if row.attempts >= 8:
                 row.state = "failed"
+                # 备忘推送 8 次失败：把备忘的 push_status 置为 wechat_failed，
+                # 备忘录页直接显示“微信发送失败”，不再停留在“已排队发微信”。
+                try:
+                    payload = json.loads(row.payload_json or "{}")
+                except Exception:
+                    payload = {}
+                if payload.get("kind") == "memo" and payload.get("memo_id"):
+                    memo = db.get(Memo, payload["memo_id"])
+                    if memo is not None:
+                        memo.push_status = "wechat_failed"
+                        memo.updated_at = utcnow()
 
 
 def scrub_deliveries(db, user_id: int):
