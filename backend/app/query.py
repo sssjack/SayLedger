@@ -90,19 +90,26 @@ def load_transactions(db: Session, user_id: int, query: dict[str, Any] | None) -
     keyword = str(query.get("keyword") or "").strip()
     if keyword:
         # 关键词在 SQL 里跨 JSON 字段匹配不干净，取回后过滤更准确；账本规模下完全够用。
-        needle = keyword.lower()
-        rows = [
-            row
-            for row in rows
-            if needle in (row.merchant or "").lower()
-            or needle in (row.note or "").lower()
-            or needle in (row.event or "").lower()
-            or needle in (row.category or "").lower()
-            or needle in (row.remark or "").lower()
-            or needle in (row.counterparty or "").lower()
-            or needle in (row.payment_method or "").lower()
-            or needle in (row.items_json or "").lower()
-        ]
+        # 多词关键词按空白拆词、逐词 AND（可跨字段）：用户问“opencode go套餐”
+        # 时模型给 keyword="opencode go"，整词子串对不上商户“OpenCode”
+        # （没空格）+ 备注“购买Go套餐”（没 opencode），整笔就漏了；
+        # 拆词后 opencode 对上商户、go 对上备注，就能找到。
+        # 单词关键词拆完只有一个词，行为与原来完全一致。
+        tokens = [token.lower() for token in keyword.split() if token]
+
+        def _haystack(row) -> str:
+            return " ".join([
+                row.merchant or "", row.note or "", row.event or "",
+                row.category or "", row.remark or "", row.counterparty or "",
+                row.payment_method or "", row.items_json or "",
+            ]).lower()
+
+        matched = []
+        for row in rows:
+            haystack = _haystack(row)
+            if all(token in haystack for token in tokens):
+                matched.append(row)
+        rows = matched
     return sort_transactions(rows, query)
 
 
